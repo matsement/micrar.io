@@ -87,11 +87,11 @@
         #branding .title {
             font-weight: bold;
             color: #ffffff;
-            font-size: 16px;
+            font-size: 22px;
         }
 
         #branding .subtitle {
-            font-size: 12px;
+            font-size: 14px;
             color: #dddddd;
         }
     </style>
@@ -414,13 +414,6 @@
                 targetCtx.arc(0, 0, r, 0, Math.PI * 2);
                 targetCtx.fill();
             }
-
-            targetCtx.globalAlpha = 0.25;
-            targetCtx.strokeStyle = '#ffffff';
-            targetCtx.lineWidth = Math.max(1, r * 0.06);
-            targetCtx.beginPath();
-            targetCtx.arc(0, 0, r, 0, Math.PI * 2);
-            targetCtx.stroke();
 
             targetCtx.restore();
         }
