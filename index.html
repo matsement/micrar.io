@@ -34,6 +34,57 @@
             font-weight: bold;
         }
 
+        #infoBox {
+            position: absolute;
+            top: 18px;
+            right: 18px;
+            width: min(380px, calc(100vw - 32px));
+            color: white;
+            font-size: 14px;
+            z-index: 300;
+            background: rgba(6, 10, 18, 0.88);
+            padding: 14px 16px 12px;
+            border-radius: 12px;
+            display: none;
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+        }
+
+        #infoBox h2 {
+            margin: 0 0 8px;
+            font-size: 18px;
+            line-height: 1.2;
+        }
+
+        #infoBox img {
+            width: 64px;
+            height: 64px;
+            object-fit: contain;
+            float: right;
+            margin: 0 0 8px 12px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.06);
+            padding: 6px;
+        }
+
+        #infoBox p {
+            font-size: 13px;
+            line-height: 1.45;
+            opacity: 0.95;
+        }
+
+        #infoBox button {
+            margin-top: 12px;
+            padding: 8px 14px;
+            font-size: 14px;
+            background: #00aa88;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            color: white;
+            font-weight: bold;
+        }
+
         #gameOver {
             position: absolute;
             top: 50%;
@@ -94,6 +145,67 @@
             font-size: 14px;
             color: #dddddd;
         }
+
+        #startScreen {
+            position: absolute;
+            inset: 0;
+            z-index: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(180deg, rgba(10,12,20,0.95), rgba(9,17,24,0.92));
+            color: white;
+            padding: 30px;
+        }
+
+        #startScreen .card {
+            max-width: 880px;
+            width: 100%;
+            background: rgba(10,10,18,0.68);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 28px 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+        }
+
+        #startScreen h1 {
+            font-size: clamp(28px, 3vw, 42px);
+            margin-bottom: 12px;
+        }
+
+        #startScreen p {
+            font-size: 16px;
+            line-height: 1.5;
+            opacity: 0.96;
+            margin-top: 12px;
+        }
+
+        #startScreen .actions {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        #startScreen button {
+            padding: 12px 16px;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        #startScreen .startBtn {
+            background: #22c7a6;
+            color: #061510;
+        }
+
+        #startScreen .linkBtn {
+            background: rgba(255,255,255,0.06);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
     </style>
 </head>
 <body>
@@ -104,9 +216,17 @@
         <div>Size: <span id="size">10</span></div>
     </div>
 
+    <div id="infoBox">
+        <img id="infoImg" src="" alt="microbe quality icon">
+        <h2 id="infoTitle"></h2>
+        <p id="infoText"></p>
+        <div style="clear: both;"></div>
+        <button id="infoContinue">Continue</button>
+    </div>
+
     <div id="branding">
         <div class="title">Micrar.io</div>
-        <div class="subtitle">The unpredictable microbe game</div>
+        <div class="subtitle">A provotype for becoming microbes</div>
     </div>
 
     <div id="gameOver">
@@ -116,12 +236,36 @@
         <button onclick="location.reload()">Play Again</button>
     </div>
 
+    <div id="startScreen">
+        <div class="card">
+            <h1>Micrar.io — Become a microbe</h1>
+            <p>
+                This game is a provotype for designers who want to explore what it means to “become microbes.”
+                In biodesign, living organisms like bacteria, fungi and algae are often treated like materials,
+                but microbes are difficult to understand because they are too small, operate at unfamiliar timescales,
+                and sense the world in ways humans cannot directly experience. This prototype invites you to think from
+                the microbe’s perspective and to notice what a designer might learn by shifting attention away from human-centred control.
+            </p>
+            <p>
+                The idea is not to replace lab work, but to complement it with digital, immersive ways of imagining microbial life.
+                By changing size, time and movement, the game explores six microbial qualities: motility, scales, rhythms,
+                translucency, communication and biophysics.
+            </p>
+            <div class="actions">
+                <button class="startBtn" id="startBtn">Start prototype</button>
+                <a href="https://example.com" target="_blank" rel="noreferrer"><button class="linkBtn">Open paper</button></a>
+            </div>
+        </div>
+    </div>
+
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+
+        let paused = false;
 
         let player = {
             x: canvas.width / 2,
@@ -130,9 +274,10 @@
             speed: 3,
             score: 0,
             alive: true,
-            opacity: 0.9,
+            opacity: 0.95,
             type: null,
-            color: '#00ff88'
+            color: '#00ff88',
+            attached: []
         };
 
         let particles = [];
@@ -157,6 +302,11 @@
         let controlChangeTimer = 10;
 
         window.addEventListener('keydown', (e) => {
+            if (e.key === ' ') {
+                if (document.getElementById('infoBox').style.display === 'block') {
+                    document.getElementById('infoContinue').click();
+                }
+            }
             keys[e.key.toLowerCase()] = true;
         });
 
@@ -169,12 +319,76 @@
             canvas.height = window.innerHeight;
         });
 
+        const infoMap = {
+            motility: {
+                title: 'Motility',
+                img: 'microbe-quality-1.svg',
+                text: 'Motility: many microbes do not glide in a smooth human-like way. They move with run-and-tumble behaviour: short bursts of straight motion are interrupted by sudden, unpredictable reorientation. This makes microbial movement feel erratic and difficult to predict, which is echoed in the game’s scrambled controls.'
+            },
+            scales: {
+                title: 'Scales',
+                img: 'microbe-quality-2.svg',
+                text: 'Scales: microbes exist as single cells and as large aggregations. In the game, other microbes attach to the player instead of disappearing, mimicking how small elements cluster into larger living assemblages and change the perception of scale.'
+            },
+            rhythms: {
+                title: 'Rhythms',
+                img: 'microbe-quality-3.svg',
+                text: 'Rhythms: microbial activity is shaped by cycles. Cells can speed up, slow down and change behaviour according to time-dependent rhythms and environmental cues. Here, enemies vary their speed with a slow phase cycle, making their motion feel temporal rather than static.'
+            },
+            translucency: {
+                title: 'Translucency',
+                img: 'microbe-quality-4.svg',
+                text: 'Translucency: many microbes are semi-transparent, making multiple layers and bodies visible at once. Some enemies are rendered with reduced opacity to evoke that shared, watery, layered quality of microbial life.'
+            },
+            communication: {
+                title: 'Communication',
+                img: 'microbe-quality-5.svg',
+                text: 'Communication: microbes coordinate through chemical signalling, often acting together as a collective rather than as isolated individuals. The game simulates this as nearby microbes influence each other and, at times, move together toward the player as a group.'
+            },
+            biophysics: {
+                title: 'Biophysics',
+                img: 'microbe-quality-6.svg',
+                text: 'Biophysics: at microscopic scale, viscosity and drag dominate, while momentum and inertia matter far less. Motion is slowed, damped and immediate. In this prototype the enemies move with a low-inertia “viscous” feel, making the world behave like a microscopic fluid rather than a human-sized environment.'
+            }
+        };
+
+        const shown = {
+            motility: false,
+            scales: false,
+            rhythms: false,
+            translucency: false,
+            communication: false,
+            biophysics: false
+        };
+
+        function showInfo(key) {
+            if (!infoMap[key] || shown[key]) return;
+            const infoBox = document.getElementById('infoBox');
+            document.getElementById('infoTitle').textContent = infoMap[key].title;
+            document.getElementById('infoText').textContent = infoMap[key].text;
+            document.getElementById('infoImg').src = infoMap[key].img;
+            infoBox.style.display = 'block';
+            paused = true;
+            shown[key] = true;
+        }
+
+        document.getElementById('infoContinue').addEventListener('click', () => {
+            document.getElementById('infoBox').style.display = 'none';
+            paused = false;
+        });
+
+        document.getElementById('startBtn').addEventListener('click', () => {
+            document.getElementById('startScreen').style.display = 'none';
+            showInfo('motility');
+        });
+
         function createParticles(count) {
             for (let i = 0; i < count; i++) {
                 particles.push({
+                    id: Math.random().toString(36).slice(2, 9),
                     x: Math.random() * canvas.width,
                     y: Math.random() * canvas.height,
-                    radius: 3,
+                    radius: 3 + Math.random() * 3,
                     color: `hsl(${Math.random() * 360}, 100%, 60%)`,
                     opacity: 0.8
                 });
@@ -189,18 +403,26 @@
 
         function createEnemies(count) {
             for (let i = 0; i < count; i++) {
+                const r = 8 + Math.random() * 18;
                 enemies.push({
+                    id: Math.random().toString(36).slice(2, 9),
                     x: Math.random() * canvas.width,
                     y: Math.random() * canvas.height,
-                    radius: 8 + Math.random() * 18,
-                    speed: 0.6 + Math.random() * 1.6,
+                    radius: r,
+                    baseSpeed: 0.5 + Math.random() * 1.5,
+                    speed: 0.5 + Math.random() * 1.5,
                     color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-                    directionChangeTimer: 0,
                     direction: { x: Math.random() - 0.5, y: Math.random() - 0.5 },
                     rhythmPhase: Math.random() * Math.PI * 2,
-                    opacity: 0.65 + Math.random() * 0.35,
-                    communicationRadius: 80 + Math.random() * 40,
-                    type: randomMicrobeType()
+                    opacity: 0.35 + Math.random() * 0.9,
+                    communicationRadius: 80 + Math.random() * 60,
+                    type: randomMicrobeType(),
+                    motilityState: 'run',
+                    runTimer: 0.4 + Math.random() * 2.0,
+                    tumbleTimer: 0,
+                    velocity: { x: 0, y: 0 },
+                    following: false,
+                    clustered: false
                 });
             }
         }
@@ -247,6 +469,8 @@
         }
 
         function update(deltaTime) {
+            if (paused) return;
+
             controlChangeTimer -= deltaTime;
             if (controlChangeTimer <= 0) {
                 randomizeControls();
@@ -255,9 +479,15 @@
             updatePlayerDirection();
             player.x += currentDirection.x * player.speed;
             player.y += currentDirection.y * player.speed;
-
             player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
             player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+
+            for (let i = 0; i < player.attached.length; i++) {
+                const a = player.attached[i];
+                const angle = (Date.now() / 500) + (i * 0.8);
+                a.x = player.x + Math.cos(angle) * (player.radius + 8 + i * 2);
+                a.y = player.y + Math.sin(angle) * (player.radius + 8 + i * 2);
+            }
 
             for (let i = particles.length - 1; i >= 0; i--) {
                 const p = particles[i];
@@ -266,13 +496,23 @@
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
                 if (distance < player.radius + p.radius) {
-                    player.radius += 0.3;
-                    player.score += 1;
+                    player.attached.push({
+                        id: Math.random().toString(36).slice(2, 9),
+                        x: p.x,
+                        y: p.y,
+                        radius: p.radius,
+                        color: p.color,
+                        opacity: p.opacity
+                    });
                     particles.splice(i, 1);
+                    if (!shown.scales) showInfo('scales');
+                    player.radius += 0.15;
+                    player.score += 1;
                     particles.push({
+                        id: Math.random().toString(36).slice(2, 9),
                         x: Math.random() * canvas.width,
                         y: Math.random() * canvas.height,
-                        radius: 3,
+                        radius: 3 + Math.random() * 3,
                         color: `hsl(${Math.random() * 360}, 100%, 60%)`,
                         opacity: 0.8
                     });
@@ -280,47 +520,88 @@
             }
 
             enemies.forEach((enemy, index) => {
-                enemy.rhythmPhase += deltaTime * 2;
-                const rhythmInfluence = Math.sin(enemy.rhythmPhase) * 0.3;
-                enemy.directionChangeTimer--;
+                enemy.rhythmPhase += deltaTime * 0.7;
+                const rhythmInfluence = Math.sin(enemy.rhythmPhase) * 0.6;
+
+                if (Math.abs(rhythmInfluence) > 0.4 && !shown.rhythms) {
+                    showInfo('rhythms');
+                }
+
+                if (enemy.motilityState === 'run') {
+                    enemy.runTimer -= deltaTime;
+                    if (enemy.runTimer <= 0) {
+                        enemy.motilityState = 'tumble';
+                        enemy.tumbleTimer = 0.08 + Math.random() * 0.4;
+                        const a = Math.random() * Math.PI * 2;
+                        enemy.direction.x = Math.cos(a);
+                        enemy.direction.y = Math.sin(a);
+                    }
+                } else {
+                    enemy.tumbleTimer -= deltaTime;
+                    enemy.direction.x += (Math.random() - 0.5) * 0.6;
+                    enemy.direction.y += (Math.random() - 0.5) * 0.6;
+                    const magnitude = Math.sqrt(enemy.direction.x ** 2 + enemy.direction.y ** 2) || 1;
+                    enemy.direction.x /= magnitude;
+                    enemy.direction.y /= magnitude;
+                    if (enemy.tumbleTimer <= 0) {
+                        enemy.motilityState = 'run';
+                        enemy.runTimer = 0.6 + Math.random() * 2.2;
+                    }
+                }
 
                 let communicationEffect = { x: 0, y: 0 };
+                let nearbyCount = 0;
                 for (let other of enemies) {
                     if (other !== enemy) {
                         const dx = other.x - enemy.x;
                         const dy = other.y - enemy.y;
                         const distance = Math.sqrt(dx * dx + dy * dy);
                         if (distance < enemy.communicationRadius && distance > 0) {
-                            communicationEffect.x += dx / distance * 0.05;
-                            communicationEffect.y += dy / distance * 0.05;
+                            communicationEffect.x += dx / distance * 0.03;
+                            communicationEffect.y += dy / distance * 0.03;
+                            nearbyCount += 1;
                         }
                     }
                 }
 
-                if (enemy.directionChangeTimer <= 0) {
-                    enemy.direction = {
-                        x: Math.random() - 0.5 + communicationEffect.x,
-                        y: Math.random() - 0.5 + communicationEffect.y
-                    };
-                    const magnitude = Math.sqrt(enemy.direction.x ** 2 + enemy.direction.y ** 2);
-                    if (magnitude > 0) {
-                        enemy.direction.x /= magnitude;
-                        enemy.direction.y /= magnitude;
-                    }
-                    enemy.directionChangeTimer = 60 + Math.random() * 120;
+                if (nearbyCount > 2 && !enemy.following) {
+                    enemy.following = true;
+                    enemy.clustered = true;
+                    if (!shown.communication) showInfo('communication');
                 }
 
-                enemy.x += (enemy.direction.x + rhythmInfluence) * enemy.speed;
-                enemy.y += (enemy.direction.y + rhythmInfluence) * enemy.speed;
+                if (enemy.opacity < 0.45 && !shown.translucency) {
+                    showInfo('translucency');
+                }
 
-                if (enemy.x - enemy.radius < 0 || enemy.x + enemy.radius > canvas.width) {
-                    enemy.direction.x *= -1;
-                    enemy.x = Math.max(enemy.radius, Math.min(canvas.width - enemy.radius, enemy.x));
+                if (enemy.baseSpeed < 0.7 && !shown.biophysics) {
+                    showInfo('biophysics');
                 }
-                if (enemy.y - enemy.radius < 0 || enemy.y + enemy.radius > canvas.height) {
-                    enemy.direction.y *= -1;
-                    enemy.y = Math.max(enemy.radius, Math.min(canvas.height - enemy.radius, enemy.y));
+
+                let desired = {
+                    x: enemy.direction.x + communicationEffect.x,
+                    y: enemy.direction.y + communicationEffect.y
+                };
+
+                const targetSpeed = Math.max(0.15, enemy.baseSpeed + rhythmInfluence * 0.5);
+
+                if (enemy.following) {
+                    const dx = player.x - enemy.x;
+                    const dy = player.y - enemy.y;
+                    const d = Math.sqrt(dx * dx + dy * dy) || 1;
+                    desired.x = dx / d;
+                    desired.y = dy / d;
                 }
+
+                enemy.velocity.x = desired.x * targetSpeed;
+                enemy.velocity.y = desired.y * targetSpeed;
+                enemy.x += enemy.velocity.x;
+                enemy.y += enemy.velocity.y;
+
+                if (enemy.x - enemy.radius < 0) { enemy.x = enemy.radius; enemy.direction.x *= -1; }
+                if (enemy.x + enemy.radius > canvas.width) { enemy.x = canvas.width - enemy.radius; enemy.direction.x *= -1; }
+                if (enemy.y - enemy.radius < 0) { enemy.y = enemy.radius; enemy.direction.y *= -1; }
+                if (enemy.y + enemy.radius > canvas.height) { enemy.y = canvas.height - enemy.radius; enemy.direction.y *= -1; }
 
                 const dx = player.x - enemy.x;
                 const dy = player.y - enemy.y;
@@ -330,6 +611,17 @@
                     if (player.radius > enemy.radius) {
                         player.radius += enemy.radius * 0.5;
                         player.score += Math.floor(enemy.radius);
+                        const pieces = Math.max(1, Math.floor(enemy.radius / 4));
+                        for (let k = 0; k < pieces; k++) {
+                            player.attached.push({
+                                id: Math.random().toString(36).slice(2, 9),
+                                x: player.x,
+                                y: player.y,
+                                radius: 2 + Math.random() * 3,
+                                color: enemy.color,
+                                opacity: Math.max(0.2, enemy.opacity)
+                            });
+                        }
                         enemies.splice(index, 1);
                     } else {
                         gameEnd();
@@ -442,6 +734,16 @@
             if (!player.type) {
                 player.type = randomMicrobeType();
             }
+
+            player.attached.forEach(a => {
+                ctx.globalAlpha = a.opacity || 0.9;
+                ctx.fillStyle = a.color || '#ffffff';
+                ctx.beginPath();
+                ctx.arc(a.x, a.y, a.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            });
+
             drawMicrobe(ctx, player.x, player.y, player.radius, player.type, player.color, player.opacity);
         }
 
@@ -450,6 +752,7 @@
             document.getElementById('gameOver').style.display = 'block';
             document.getElementById('finalScore').textContent = player.score;
             document.getElementById('finalSize').textContent = Math.round(player.radius);
+            paused = true;
         }
 
         let lastTime = Date.now();
@@ -466,7 +769,7 @@
         }
 
         createParticles(200);
-        createEnemies(12);
+        createEnemies(14);
         randomizeControls();
         gameLoop();
     </script>
