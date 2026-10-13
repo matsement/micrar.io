@@ -178,8 +178,6 @@
                 const offX = Math.cos(offsetAngle)*offsetDist; const offY = Math.sin(offsetAngle)*offsetDist;
                 const attached = { id: e.id, x: player.x+offX, y: player.y+offY, radius: e.radius*0.9, color: e.color, opacity: Math.max(0.25, e.opacity), type: e.type, offsetX: offX, offsetY: offY };
                 player.attached.push(attached);
-                player.radius += e.radius; // modest growth
-                player.score += Math.floor(e.radius);
                 enemies.splice(i,1);
                 // if all enemies attached, show summary soon
                 if(enemies.length===0){ setTimeout(()=>showSummary(),600); }
