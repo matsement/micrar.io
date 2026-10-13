@@ -11,6 +11,11 @@
             box-sizing: border-box;
         }
 
+        html, body {
+            width: 100%;
+            height: 100%;
+        }
+
         body {
             font-family: Arial, sans-serif;
             overflow: hidden;
@@ -21,33 +26,28 @@
             display: block;
         }
 
-        #ui {
+        #overlay {
             position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            font-size: 18px;
-            z-index: 100;
-            background: rgba(0, 0, 0, 0.5);
-            padding: 10px 12px;
-            border-radius: 8px;
-            font-weight: bold;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.68);
+            z-index: 300;
+            display: none;
         }
 
         #infoBox {
             position: absolute;
             top: 18px;
             right: 18px;
-            width: min(380px, calc(100vw - 32px));
+            width: min(420px, calc(100vw - 32px));
             color: white;
             font-size: 14px;
-            z-index: 300;
-            background: rgba(6, 10, 18, 0.88);
-            padding: 14px 16px 12px;
+            z-index: 310;
+            background: rgba(6, 10, 18, 0.98);
+            padding: 18px 18px 14px;
             border-radius: 12px;
             display: none;
             border: 1px solid rgba(255,255,255,0.08);
-            box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+            box-shadow: 0 10px 24px rgba(0,0,0,0.45);
         }
 
         #infoBox h2 {
@@ -63,14 +63,14 @@
             float: right;
             margin: 0 0 8px 12px;
             border-radius: 10px;
-            background: rgba(255,255,255,0.06);
+            background: rgba(255,255,255,0.04);
             padding: 6px;
         }
 
         #infoBox p {
-            font-size: 13px;
+            font-size: 14px;
             line-height: 1.45;
-            opacity: 0.95;
+            opacity: 0.98;
         }
 
         #infoBox button {
@@ -85,45 +85,21 @@
             font-weight: bold;
         }
 
-        #gameOver {
+        #countdown {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.9);
-            color: white;
-            padding: 40px;
-            border-radius: 10px;
-            text-align: center;
-            z-index: 200;
-            display: none;
-            border: 3px solid #ff0000;
-        }
-
-        #gameOver h1 {
-            font-size: 36px;
-            margin-bottom: 20px;
-            color: #ff0000;
-        }
-
-        #gameOver p {
-            font-size: 20px;
-            margin: 10px 0;
-        }
-
-        #gameOver button {
-            margin-top: 20px;
-            padding: 10px 20px;
-            font-size: 18px;
-            background: #00ff00;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-
-        #gameOver button:hover {
-            background: #00cc00;
+            top: 18px;
+            right: 18px;
+            z-index: 305;
+            color: #dfeff6;
+            font-weight: 700;
+            background: rgba(0,0,0,0.35);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            border: 1px solid rgba(255,255,255,0.04);
+            display: flex;
+            gap: 8px;
+            align-items: center;
         }
 
         #branding {
@@ -161,8 +137,8 @@
         #startScreen .card {
             max-width: 880px;
             width: 100%;
-            background: rgba(10,10,18,0.68);
-            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(10,10,18,0.78);
+            border: 1px solid rgba(255,255,255,0.06);
             border-radius: 16px;
             padding: 28px 30px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.35);
@@ -183,7 +159,6 @@
         #startScreen .actions {
             margin-top: 20px;
             display: flex;
-            flex-wrap: wrap;
             gap: 10px;
         }
 
@@ -201,20 +176,54 @@
             color: #061510;
         }
 
-        #startScreen .linkBtn {
-            background: rgba(255,255,255,0.06);
+        #summaryScreen {
+            position: absolute;
+            inset: 0;
+            z-index: 600;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(180deg, rgba(6,8,12,0.96), rgba(10,10,12,0.98));
             color: white;
-            border: 1px solid rgba(255,255,255,0.08);
+            padding: 32px;
+        }
+
+        #summaryCard {
+            max-width: 760px;
+            width: 100%;
+            background: rgba(8,8,12,0.9);
+            border-radius: 14px;
+            padding: 28px;
+            box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+
+        #summaryCard h1 {
+            margin-bottom: 8px;
+        }
+
+        #summaryCard p {
+            margin: 8px 0;
+        }
+
+        #summaryCard ul {
+            margin-left: 20px;
+            margin-top: 12px;
+            margin-bottom: 12px;
+            line-height: 1.7;
+        }
+
+        .hidden {
+            display: none !important;
         }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
 
-    <div id="ui">
-        <div>Score: <span id="score">0</span></div>
-        <div>Size: <span id="size">10</span></div>
-    </div>
+    <div id="overlay"></div>
+
+    <div id="countdown">Next in: <span id="countdownTimer">15</span>s</div>
 
     <div id="infoBox">
         <img id="infoImg" src="" alt="microbe quality icon">
@@ -229,31 +238,29 @@
         <div class="subtitle">A provotype for becoming microbes</div>
     </div>
 
-    <div id="gameOver">
-        <h1>GAME OVER!</h1>
-        <p>Final Score: <span id="finalScore">0</span></p>
-        <p>Final Size: <span id="finalSize">0</span></p>
-        <button onclick="location.reload()">Play Again</button>
+    <div id="summaryScreen">
+        <div id="summaryCard">
+            <h1>Microbial qualities</h1>
+            <p>Here is what emerged during the prototype.</p>
+            <ul id="qualitiesList"></ul>
+            <p>Final size: <span id="summarySize">0</span></p>
+            <p>Microbes attached: <span id="summaryAttachments">0</span></p>
+            <div style="margin-top:18px; display:flex; gap:10px;">
+                <button id="replayBtn" style="padding:10px 14px; border-radius:8px; background:#22c7a6; border:none; font-weight:700; color: #061510; cursor:pointer;">Play Again</button>
+                <button id="closeSummary" style="padding:10px 14px; border-radius:8px; background:#444; border:none; color:#fff; cursor:pointer;">Close</button>
+            </div>
+        </div>
     </div>
 
     <div id="startScreen">
         <div class="card">
             <h1>Micrar.io — Become a microbe</h1>
             <p>
-                This game is a provotype for designers who want to explore what it means to “become microbes.”
-                In biodesign, living organisms like bacteria, fungi and algae are often treated like materials,
-                but microbes are difficult to understand because they are too small, operate at unfamiliar timescales,
-                and sense the world in ways humans cannot directly experience. This prototype invites you to think from
-                the microbe’s perspective and to notice what a designer might learn by shifting attention away from human-centred control.
-            </p>
-            <p>
-                The idea is not to replace lab work, but to complement it with digital, immersive ways of imagining microbial life.
-                By changing size, time and movement, the game explores six microbial qualities: motility, scales, rhythms,
-                translucency, communication and biophysics.
+                Microbes have six qualities: motility, scales, rhythms, translucency, communication and biophysics.
+                Use WASD to move and attach to other microbes; as your colony grows, the game explains each quality one by one.
             </p>
             <div class="actions">
                 <button class="startBtn" id="startBtn">Start prototype</button>
-                <a href="https://example.com" target="_blank" rel="noreferrer"><button class="linkBtn">Open paper</button></a>
             </div>
         </div>
     </div>
@@ -266,6 +273,7 @@
         canvas.height = window.innerHeight;
 
         let paused = false;
+        let gameEnded = false;
 
         let player = {
             x: canvas.width / 2,
@@ -323,43 +331,51 @@
             motility: {
                 title: 'Motility',
                 img: 'microbe quality 1.png',
-                text: 'Motility: many microbes do not glide in a smooth human-like way. They move with run-and-tumble behaviour: short bursts of straight motion are interrupted by sudden, unpredictable reorientation. This makes microbial movement feel erratic and difficult to predict, which is echoed in the game’s scrambled controls.'
+                text: 'Motility: microbes do not move in smooth, human-style paths. They run in short bursts and tumble unexpectedly, creating jerky movement and sudden directional shifts.'
             },
             scales: {
                 title: 'Scales',
                 img: 'microbe quality 2.png',
-                text: 'Scales: microbes exist as single cells and as large aggregations. In the game, other microbes attach to the player instead of disappearing, mimicking how small elements cluster into larger living assemblages and change the perception of scale.'
+                text: 'Scales: microbes exist as individual cells and as collective clusters. In this prototype, attached microbes form a larger moving body instead of disappearing.'
             },
             rhythms: {
                 title: 'Rhythms',
                 img: 'microbe quality 3.png',
-                text: 'Rhythms: microbial activity is shaped by cycles. Cells can speed up, slow down and change behaviour according to time-dependent rhythms and environmental cues. Here, enemies vary their speed with a slow phase cycle, making their motion feel temporal rather than static.'
+                text: 'Rhythms: microbial activity changes over time. Cells speed up and slow down according to cycles, environmental shifts and repeated patterns.'
             },
             translucency: {
                 title: 'Translucency',
                 img: 'microbe quality 4.png',
-                text: 'Translucency: many microbes are semi-transparent, making multiple layers and bodies visible at once. Some enemies are rendered with reduced opacity to evoke that shared, watery, layered quality of microbial life.'
+                text: 'Translucency: many microbes are semi-transparent, allowing bodies and layers to overlap visually. The game uses reduced opacity to show this interpenetration.'
             },
             communication: {
                 title: 'Communication',
                 img: 'microbe quality 5.png',
-                text: 'Communication: microbes coordinate through chemical signalling, often acting together as a collective rather than as isolated individuals. The game simulates this as nearby microbes influence each other and, at times, move together toward the player as a group.'
+                text: 'Communication: microbes coordinate through chemical signals and nearby interactions. They act collectively rather than as isolated individuals.'
             },
             biophysics: {
                 title: 'Biophysics',
                 img: 'microbe quality 6.png',
-                text: 'Biophysics: at microscopic scale, viscosity and drag dominate, while momentum and inertia matter far less. Motion is slowed, damped and immediate. In this prototype the enemies move with a low-inertia “viscous” feel, making the world behave like a microscopic fluid rather than a human-sized environment.'
+                text: 'Biophysics: at microscopic scales, drag and viscosity matter more than momentum. Movement is damped, immediate and shaped by the surrounding medium.'
             }
         };
 
-        const shown = {
-            motility: false,
-            scales: false,
-            rhythms: false,
-            translucency: false,
-            communication: false,
-            biophysics: false
-        };
+        const qualitiesOrder = ['motility', 'scales', 'rhythms', 'translucency', 'communication', 'biophysics'];
+        const shown = {};
+        qualitiesOrder.forEach(q => shown[q] = false);
+
+        let nextQualityIndex = 0;
+        let nextQualitySeconds = 15;
+        let countdownTimer = null;
+        let infoVisible = false;
+
+        function updateCountdownDisplay() {
+            document.getElementById('countdownTimer').textContent = String(nextQualitySeconds);
+        }
+
+        function setOverlay(show) {
+            document.getElementById('overlay').style.display = show ? 'block' : 'none';
+        }
 
         function showInfo(key) {
             if (!infoMap[key] || shown[key]) return;
@@ -368,19 +384,50 @@
             document.getElementById('infoText').textContent = infoMap[key].text;
             document.getElementById('infoImg').src = infoMap[key].img;
             infoBox.style.display = 'block';
+            setOverlay(true);
             paused = true;
+            infoVisible = true;
             shown[key] = true;
         }
 
         document.getElementById('infoContinue').addEventListener('click', () => {
             document.getElementById('infoBox').style.display = 'none';
+            setOverlay(false);
             paused = false;
+            infoVisible = false;
+            nextQualitySeconds = 15;
+            updateCountdownDisplay();
         });
 
         document.getElementById('startBtn').addEventListener('click', () => {
             document.getElementById('startScreen').style.display = 'none';
-            showInfo('motility');
+            startQualityCountdown();
         });
+
+        function startQualityCountdown() {
+            if (countdownTimer) clearInterval(countdownTimer);
+            nextQualityIndex = 0;
+            nextQualitySeconds = 15;
+            updateCountdownDisplay();
+
+            countdownTimer = setInterval(() => {
+                if (paused || infoVisible) return;
+                if (nextQualityIndex >= qualitiesOrder.length) {
+                    nextQualitySeconds = 0;
+                    updateCountdownDisplay();
+                    return;
+                }
+                nextQualitySeconds -= 1;
+                updateCountdownDisplay();
+                if (nextQualitySeconds <= 0) {
+                    const key = qualitiesOrder[nextQualityIndex];
+                    showInfo(key);
+                    nextQualityIndex += 1;
+                    nextQualitySeconds = 15;
+                    updateCountdownDisplay();
+                }
+            }, 1000);
+        }
 
         function createParticles(count) {
             for (let i = 0; i < count; i++) {
@@ -403,7 +450,7 @@
 
         function createEnemies(count) {
             for (let i = 0; i < count; i++) {
-                const r = 8 + Math.random() * 18;
+                const r = 10 + Math.random() * 20;
                 enemies.push({
                     id: Math.random().toString(36).slice(2, 9),
                     x: Math.random() * canvas.width,
@@ -469,7 +516,7 @@
         }
 
         function update(deltaTime) {
-            if (paused) return;
+            if (paused || gameEnded) return;
 
             controlChangeTimer -= deltaTime;
             if (controlChangeTimer <= 0) {
@@ -496,17 +543,8 @@
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
                 if (distance < player.radius + p.radius) {
-                    player.attached.push({
-                        id: Math.random().toString(36).slice(2, 9),
-                        x: p.x,
-                        y: p.y,
-                        radius: p.radius,
-                        color: p.color,
-                        opacity: p.opacity
-                    });
                     particles.splice(i, 1);
-                    if (!shown.scales) showInfo('scales');
-                    player.radius += 0.15;
+                    player.radius += 0.12;
                     player.score += 1;
                     particles.push({
                         id: Math.random().toString(36).slice(2, 9),
@@ -522,10 +560,6 @@
             enemies.forEach((enemy, index) => {
                 enemy.rhythmPhase += deltaTime * 0.7;
                 const rhythmInfluence = Math.sin(enemy.rhythmPhase) * 0.6;
-
-                if (Math.abs(rhythmInfluence) > 0.4 && !shown.rhythms) {
-                    showInfo('rhythms');
-                }
 
                 if (enemy.motilityState === 'run') {
                     enemy.runTimer -= deltaTime;
@@ -567,15 +601,6 @@
                 if (nearbyCount > 2 && !enemy.following) {
                     enemy.following = true;
                     enemy.clustered = true;
-                    if (!shown.communication) showInfo('communication');
-                }
-
-                if (enemy.opacity < 0.45 && !shown.translucency) {
-                    showInfo('translucency');
-                }
-
-                if (enemy.baseSpeed < 0.7 && !shown.biophysics) {
-                    showInfo('biophysics');
                 }
 
                 let desired = {
@@ -608,29 +633,26 @@
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
                 if (distance < player.radius + enemy.radius) {
-                    if (player.radius > enemy.radius) {
-                        player.radius += enemy.radius * 0.5;
-                        player.score += Math.floor(enemy.radius);
-                        const pieces = Math.max(1, Math.floor(enemy.radius / 4));
-                        for (let k = 0; k < pieces; k++) {
-                            player.attached.push({
-                                id: Math.random().toString(36).slice(2, 9),
-                                x: player.x,
-                                y: player.y,
-                                radius: 2 + Math.random() * 3,
-                                color: enemy.color,
-                                opacity: Math.max(0.2, enemy.opacity)
-                            });
-                        }
-                        enemies.splice(index, 1);
-                    } else {
-                        gameEnd();
+                    const pieces = Math.max(1, Math.floor(enemy.radius / 3));
+                    for (let k = 0; k < pieces; k++) {
+                        player.attached.push({
+                            id: Math.random().toString(36).slice(2, 9),
+                            x: player.x,
+                            y: player.y,
+                            radius: Math.max(2, 1 + Math.random() * Math.min(5, enemy.radius / 2)),
+                            color: enemy.color,
+                            opacity: Math.max(0.25, enemy.opacity)
+                        });
+                    }
+                    player.radius += enemy.radius * 0.35;
+                    player.score += Math.floor(enemy.radius);
+                    enemies.splice(index, 1);
+
+                    if (enemies.length === 0) {
+                        setTimeout(showSummary, 500);
                     }
                 }
             });
-
-            document.getElementById('score').textContent = player.score;
-            document.getElementById('size').textContent = Math.round(player.radius);
         }
 
         function drawMicrobe(targetCtx, x, y, r, type, color, opacity) {
@@ -638,66 +660,108 @@
             targetCtx.translate(x, y);
             targetCtx.globalAlpha = opacity;
 
+            const phase = (x + y + Date.now() / 120) % 1000;
+
             if (type === 'spiky') {
-                targetCtx.fillStyle = color;
+                const points = 18 + Math.floor(r / 2);
                 targetCtx.beginPath();
-                targetCtx.arc(0, 0, r * 0.7, 0, Math.PI * 2);
+                for (let i = 0; i < points; i++) {
+                    const a = (i / points) * Math.PI * 2;
+                    const wobble = Math.sin(a * 3 + phase * 0.01) * 0.18;
+                    const radius = r * (0.82 + wobble);
+                    const px = Math.cos(a) * radius;
+                    const py = Math.sin(a) * radius;
+                    if (i === 0) targetCtx.moveTo(px, py); else targetCtx.lineTo(px, py);
+                }
+                targetCtx.closePath();
+                targetCtx.fillStyle = color;
                 targetCtx.fill();
 
-                const spikes = 10 + Math.floor(r / 3);
+                const spikes = Math.max(6, Math.floor(r / 2));
                 for (let i = 0; i < spikes; i++) {
-                    const a = (i / spikes) * Math.PI * 2;
-                    const sx = Math.cos(a) * (r * 0.9);
-                    const sy = Math.sin(a) * (r * 0.9);
+                    const a = (i / spikes) * Math.PI * 2 + Math.sin(phase * 0.01 + i) * 0.12;
+                    const sx = Math.cos(a) * r * 0.75;
+                    const sy = Math.sin(a) * r * 0.75;
+                    const ex = Math.cos(a) * (r * (1.1 + Math.random() * 0.6));
+                    const ey = Math.sin(a) * (r * (1.1 + Math.random() * 0.6));
                     targetCtx.beginPath();
                     targetCtx.moveTo(sx, sy);
-                    const ex = Math.cos(a) * (r * 1.5);
-                    const ey = Math.sin(a) * (r * 1.5);
                     targetCtx.lineTo(ex, ey);
-                    targetCtx.lineWidth = Math.max(1, r * 0.08);
                     targetCtx.strokeStyle = color;
+                    targetCtx.lineWidth = Math.max(1, r * 0.06);
                     targetCtx.stroke();
                 }
             } else if (type === 'rod') {
                 targetCtx.fillStyle = color;
-                const w = r * 1.6;
-                const h = r * 0.8;
                 targetCtx.beginPath();
-                targetCtx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
+                const length = r * 2.2;
+                const halfW = r * 0.8;
+                const segments = 12;
+                for (let i = 0; i <= segments; i++) {
+                    const t = i / segments;
+                    const a = Math.sin(phase * 0.01 + t * 6) * 0.25;
+                    const rx = -length / 2 + t * length;
+                    const ry = Math.cos(t * Math.PI * 2 + phase * 0.01) * (halfW * a);
+                    const w = halfW * (0.8 + Math.sin(t * 3 + phase * 0.02) * 0.2);
+                    if (i === 0) targetCtx.moveTo(rx, ry - w); else targetCtx.lineTo(rx, ry - w);
+                }
+                for (let i = segments; i >= 0; i--) {
+                    const t = i / segments;
+                    const a = Math.sin(phase * 0.01 + t * 6) * 0.25;
+                    const rx = -length / 2 + t * length;
+                    const ry = Math.cos(t * Math.PI * 2 + phase * 0.01) * (halfW * a);
+                    const w = halfW * (0.8 + Math.sin(t * 3 + phase * 0.02) * 0.2);
+                    targetCtx.lineTo(rx, ry + w);
+                }
+                targetCtx.closePath();
                 targetCtx.fill();
 
                 targetCtx.strokeStyle = color;
-                targetCtx.lineWidth = Math.max(1, r * 0.07);
-                for (let i = 0; i < 3; i++) {
-                    const off = -h / 2 + i * (h / 1.5);
+                targetCtx.lineWidth = Math.max(1, r * 0.04);
+                for (let i = 0; i < 6; i++) {
+                    const t = i / 6;
+                    const rx = -length / 2 + t * length;
+                    const ry = Math.sin(t * 10 + phase * 0.02) * halfW * 0.2;
                     targetCtx.beginPath();
-                    targetCtx.moveTo(-w / 2 + 4, off);
-                    targetCtx.bezierCurveTo(-w / 2 - r, off - 6, -w / 2 - r, off + 10, -w / 2 - (r * 1.2), off + 14);
+                    targetCtx.moveTo(rx, ry);
+                    targetCtx.lineTo(rx + Math.sign(Math.random() - 0.5) * (r * 0.8), ry + (Math.random() - 0.5) * r);
                     targetCtx.stroke();
                 }
             } else if (type === 'coccus') {
                 const count = 4 + Math.floor(r / 4);
                 targetCtx.fillStyle = color;
                 for (let i = 0; i < count; i++) {
-                    const a = Math.random() * Math.PI * 2;
-                    const rr = Math.random() * r * 0.6;
+                    const a = (i / count) * Math.PI * 2 + Math.sin(phase * 0.01 + i) * 0.2;
+                    const rr = Math.random() * r * 0.5;
                     targetCtx.beginPath();
-                    targetCtx.arc(Math.cos(a) * rr, Math.sin(a) * rr, r * 0.45, 0, Math.PI * 2);
+                    targetCtx.arc(Math.cos(a) * rr, Math.sin(a) * rr, r * 0.6 * (0.6 + Math.random() * 0.6), 0, Math.PI * 2);
                     targetCtx.fill();
+                }
+                targetCtx.strokeStyle = color;
+                targetCtx.lineWidth = Math.max(1, r * 0.03);
+                for (let i = 0; i < 8; i++) {
+                    const a = (i / 8) * Math.PI * 2;
+                    const sx = Math.cos(a) * r * 0.7;
+                    const sy = Math.sin(a) * r * 0.7;
+                    const ex = Math.cos(a) * (r * (0.95 + Math.random() * 0.6));
+                    const ey = Math.sin(a) * (r * (0.95 + Math.random() * 0.6));
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(sx, sy);
+                    targetCtx.lineTo(ex, ey);
+                    targetCtx.stroke();
                 }
             } else if (type === 'flagella') {
                 targetCtx.fillStyle = color;
                 targetCtx.beginPath();
-                targetCtx.ellipse(0, 0, r * 0.9, r * 0.5, 0, 0, Math.PI * 2);
+                targetCtx.ellipse(0, 0, r * 0.95, r * 0.6, 0, 0, Math.PI * 2);
                 targetCtx.fill();
-
                 targetCtx.strokeStyle = color;
                 targetCtx.lineWidth = Math.max(1, r * 0.05);
                 for (let i = 0; i < 5; i++) {
                     const off = -r * 0.35 + i * (r * 0.17);
                     targetCtx.beginPath();
-                    targetCtx.moveTo(r * 0.9, off);
-                    targetCtx.quadraticCurveTo(r * 1.5 + Math.random() * r, off + (Math.random() - 0.5) * r, r * 1.9 + Math.random() * r, off + 10 + Math.random() * 10);
+                    targetCtx.moveTo(r * 0.85, off);
+                    targetCtx.quadraticCurveTo(r * 1.3 + Math.random() * r, off + (Math.random() - 0.5) * r, r * 1.9 + Math.random() * r, off + 10 + Math.random() * 10);
                     targetCtx.stroke();
                 }
             } else {
@@ -736,24 +800,39 @@
             }
 
             player.attached.forEach(a => {
-                ctx.globalAlpha = a.opacity || 0.9;
-                ctx.fillStyle = a.color || '#ffffff';
-                ctx.beginPath();
-                ctx.arc(a.x, a.y, a.radius, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.globalAlpha = 1.0;
+                drawMicrobe(ctx, a.x, a.y, a.radius, 'coccus', a.color, a.opacity || 0.9);
             });
 
             drawMicrobe(ctx, player.x, player.y, player.radius, player.type, player.color, player.opacity);
+            updateCountdownDisplay();
         }
 
-        function gameEnd() {
-            player.alive = false;
-            document.getElementById('gameOver').style.display = 'block';
-            document.getElementById('finalScore').textContent = player.score;
-            document.getElementById('finalSize').textContent = Math.round(player.radius);
+        function showSummary() {
+            if (gameEnded) return;
+            gameEnded = true;
             paused = true;
+            setOverlay(true);
+            const listEl = document.getElementById('qualitiesList');
+            listEl.innerHTML = '';
+            qualitiesOrder.forEach(q => {
+                const li = document.createElement('li');
+                li.textContent = `${infoMap[q].title} — explained`;
+                listEl.appendChild(li);
+            });
+            document.getElementById('summarySize').textContent = Math.round(player.radius);
+            document.getElementById('summaryAttachments').textContent = player.attached.length;
+            document.getElementById('summaryScreen').style.display = 'flex';
         }
+
+        document.getElementById('replayBtn').addEventListener('click', () => location.reload());
+        document.getElementById('closeSummary').addEventListener('click', () => {
+            document.getElementById('summaryScreen').style.display = 'none';
+            setOverlay(false);
+        });
+
+        createParticles(220);
+        createEnemies(14);
+        randomizeControls();
 
         let lastTime = Date.now();
         function gameLoop() {
@@ -761,16 +840,13 @@
             const deltaTime = (currentTime - lastTime) / 1000;
             lastTime = currentTime;
 
-            if (player.alive) {
+            if (!gameEnded) {
                 update(deltaTime);
                 draw();
             }
             requestAnimationFrame(gameLoop);
         }
 
-        createParticles(200);
-        createEnemies(14);
-        randomizeControls();
         gameLoop();
     </script>
 </body>
