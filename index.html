@@ -58,8 +58,8 @@
 
     <div id="startScreen">
         <div class="card">
-            <h1>Can you design with something you cannot command?</h1>
-            <p>You have 45 seconds.</p>
+            <h1>Micrar.io</h1>
+            <p>Collect 10 microbes in the circle. You have 45 seconds.</p>
             <div class="actions"><button id="startBtn">Start</button></div>
         </div>
     </div>
@@ -183,13 +183,13 @@
             runTimer: 0.6 + Math.random() * 1.6,
             tumbleTimer: 0,
             rhythmPhase: Math.random() * Math.PI * 2,
-            communicationRadius: 75 + Math.random() * 90,
-            responseProb: 0.34 + Math.random() * 0.26,
+            communicationRadius: 95 + Math.random() * 120, // larger so they feel more aware
+            responseProb: 0.52 + Math.random() * 0.28, // higher probability to respond
             responseMode: (function(){
                 const r = Math.random();
-                if(r < 0.5) return 'attract';
-                if(r < 0.7) return 'nightOnly';
-                if(r < 0.85) return 'repel';
+                if(r < 0.6) return 'attract';
+                if(r < 0.82) return 'nightOnly';
+                if(r < 0.92) return 'repel';
                 return 'ignore';
             })(),
             individuality: Math.random(),
@@ -547,8 +547,8 @@
             const dy = o.y - e.y;
             const dist = Math.hypot(dx, dy);
             if(dist > 0 && dist < e.communicationRadius){
-                comm.x += (dx / dist) * 0.02;
-                comm.y += (dy / dist) * 0.02;
+                comm.x += (dx / dist) * 0.04; // stronger group cohesion
+                comm.y += (dy / dist) * 0.04;
                 nearby++;
             }
         }
@@ -569,7 +569,8 @@
             if(dist > pulseRadius + 30) continue;
             if(now < e.ignorePulsesUntil) continue;
 
-            const willRespond = Math.random() < e.responseProb;
+            // make the microbes more reliably respond
+            const willRespond = Math.random() < e.responseProb + 0.12 * (1 - e.individuality);
             if(!willRespond) continue;
             if(e.responseMode === 'ignore') continue;
             if(e.responseMode === 'nightOnly' && !night) continue;
@@ -578,7 +579,7 @@
             const ny = dy / dist;
             const proximity = Math.max(0, 1 - (dist / Math.max(20, pulseRadius + 1)));
             const phaseFactor = 1 - (elapsed / p.duration);
-            const strength = (0.2 + e.individuality * 0.12) * proximity * phaseFactor;
+            const strength = (0.32 + e.individuality * 0.16) * proximity * phaseFactor; // stronger influence
 
             if(e.responseMode === 'repel'){
                 pulseInfluence.x -= nx * strength;
@@ -590,19 +591,19 @@
             e.lastRespondedAt = now;
         }
 
-        desired.x += pulseInfluence.x * 1.35 + (Math.random() - 0.5) * 0.12;
-        desired.y += pulseInfluence.y * 1.35 + (Math.random() - 0.5) * 0.12;
+        desired.x += pulseInfluence.x * 1.8 + (Math.random() - 0.5) * 0.06; // less random noise, stronger pull from pulses
+        desired.y += pulseInfluence.y * 1.8 + (Math.random() - 0.5) * 0.06;
 
         const dxz = zone.x - e.x;
         const dyz = zone.y - e.y;
         const distz = Math.hypot(dxz, dyz) || 0.0001;
         const inside = distz <= zone.radius + e.radius * 0.6;
         if(inside){
-            const pullStrength = 0.18 + (1 - e.individuality) * 0.18;
+            const pullStrength = 0.26 + (1 - e.individuality) * 0.24; // stronger retention inside
             desired.x += (dxz / distz) * pullStrength;
             desired.y += (dyz / distz) * pullStrength;
             if(e.motilityState === 'tumble') {
-                e.tumbleTimer += Math.min(0.12, e.individuality * 0.08);
+                e.tumbleTimer += Math.min(0.18, e.individuality * 0.12);
             }
         }
 
@@ -612,32 +613,32 @@
 
         const rhythm = Math.sin(e.rhythmPhase + dn * Math.PI * 2);
         e.rhythmPhase += dt * (0.7 + dn * 1.2);
-        const baseSpeed = Math.max(0.1, e.baseSpeed * (0.6 + 0.9 * (1 - Math.abs(0.5 - dn) * 2)) + Math.abs(rhythm) * 0.12);
+        const baseSpeed = Math.max(0.1, e.baseSpeed * (0.55 + 0.9 * (1 - Math.abs(0.5 - dn) * 2)) + Math.abs(rhythm) * 0.12);
 
         const timeSinceStart = now - gameStartTime;
         if(timeSinceStart < EARLY_PHASE_END){
-            if(e.lastRespondedAt > now - 2200 && Math.hypot(e.x - zone.x, e.y - zone.y) < zone.radius + e.radius*0.6){
-                e.stickyUntil = Math.max(e.stickyUntil, now + 2200 + Math.random()*1600);
+            if(e.lastRespondedAt > now - 2600 && Math.hypot(e.x - zone.x, e.y - zone.y) < zone.radius + e.radius*0.6){
+                e.stickyUntil = Math.max(e.stickyUntil, now + 3000 + Math.random()*2000); // make sticking longer so player feels control
             }
         }
 
         let speed = baseSpeed;
         if(now < e.stickyUntil){
-            speed *= 0.46;
-            if(e.motilityState === 'run') e.runTimer += dt * 0.9;
+            speed *= 0.34; // slower while stuck inside
+            if(e.motilityState === 'run') e.runTimer += dt * 1.1;
         }
         if(now < e.speedBurstUntil){
             speed *= 1.9 + Math.random()*0.6;
         }
 
         if(timeSinceStart > LAST_PHASE_START){
-            if(Math.random() < 0.008 + (Math.hypot(e.x-zone.x, e.y-zone.y) / (zone.radius+e.radius))*0.02){
+            if(Math.random() < 0.006 + (Math.hypot(e.x-zone.x, e.y-zone.y) / (zone.radius+e.radius))*0.02){
                 const dx = e.x - zone.x;
                 const dy = e.y - zone.y;
                 const d = Math.hypot(dx,dy) || 0.0001;
-                desired.x += (dx/d) * (0.24 + Math.random()*0.26);
-                desired.y += (dy/d) * (0.24 + Math.random()*0.26);
-                e.responseProb *= 0.94;
+                desired.x += (dx/d) * (0.28 + Math.random()*0.26);
+                desired.y += (dy/d) * (0.28 + Math.random()*0.26);
+                e.responseProb *= 0.95;
             }
         }
 
@@ -683,18 +684,19 @@
             e.direction.x = (dx/d) + (Math.random()*0.6 - 0.3);
             e.direction.y = (dy/d) + (Math.random()*0.6 - 0.3);
             e.speedBurstUntil = now + 600 + Math.random()*700;
-            e.ignorePulsesUntil = now + 1400 + Math.random()*1400;
+            e.ignorePulsesUntil = now + 900 + Math.random()*900; // shorter ignore so they can re-enter faster
             e.lastLeftZoneAt = now;
-            e.x += (e.direction.x / Math.hypot(e.direction.x, e.direction.y)) * (6 + Math.random()*8);
-            e.y += (e.direction.y / Math.hypot(e.direction.x, e.direction.y)) * (6 + Math.random()*8);
+            e.x += (e.direction.x / Math.hypot(e.direction.x, e.direction.y)) * (8 + Math.random()*10);
+            e.y += (e.direction.y / Math.hypot(e.direction.x, e.direction.y)) * (8 + Math.random()*10);
         }
     }
 
     function scheduleBetrayalIfNeeded(inZone){
         const now = Date.now();
-        if(inZone >= 6){
-            if(betrayalScheduledAt === 0 && (now - lastBetrayalTime > 2500)){
-                betrayalScheduledAt = now + 500 + Math.random()*1000;
+        // only schedule betrayals when 8 or more are inside
+        if(inZone >= 8){
+            if(betrayalScheduledAt === 0 && (now - lastBetrayalTime > 2400)){
+                betrayalScheduledAt = now + 400 + Math.random()*800;
             }
         }
         if(betrayalScheduledAt !== 0 && now >= betrayalScheduledAt){
@@ -718,15 +720,21 @@
             updateMicrobe(e, dt, now);
         }
 
-        const inZone = countInZone();
+        let inZone = countInZone();
         if(inZone > highestCount) highestCount = inZone;
 
         scheduleBetrayalIfNeeded(inZone);
-        if(inZone >= 6){
-            forceMicrobesLeave(Math.min(2, Math.max(1, Math.ceil(inZone / 6))));
+        // only force leaves when 8 or more inside; use a conservative number to ensure never reaching 10
+        if(inZone >= 8){
+            // remove enough so it cannot reach 10; if it's already 10, push more out
+            const targetEscape = Math.min(3, Math.max(1, Math.ceil(inZone / 8)));
+            forceMicrobesLeave(targetEscape);
         }
+        // make sure there is never 10 inside — if somehow it is, push extra out immediately
+        inZone = countInZone();
         if(inZone >= GOAL){
-            forceMicrobesLeave(2);
+            const extra = inZone - (GOAL - 1);
+            forceMicrobesLeave(Math.max(1, extra));
         }
 
         HUD.counterEl.textContent = `${inZone} / ${GOAL}`;
