@@ -10,22 +10,57 @@
         body { font-family: Arial, sans-serif; overflow: hidden; background-color: #0b1230; color: #e6eef6; }
         canvas { display: block; }
 
+        #hud {
+            position: absolute;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 550;
+            display:flex;
+            align-items:center;
+            gap:14px;
+            background: rgba(0,0,0,0.18);
+            padding: 8px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.04);
+            color: #e8f6f0;
+            font-weight:700;
+            backdrop-filter: blur(4px);
+        }
+        #counter { font-size: 20px; letter-spacing:0.6px; }
+        #timer { font-size: 16px; opacity:0.9; font-weight:800; color:#cfeef0; }
+
         #startScreen, #summaryScreen { position: absolute; inset: 0; z-index: 500; display: flex; align-items: center; justify-content: center; padding: 30px; }
-        .card { max-width: 880px; width: 100%; background: rgba(8,8,12,0.96); border-radius: 16px; padding: 28px 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.03); color: #e6eef6; }
-        .card h1 { font-size: clamp(20px, 2.8vw, 32px); margin-bottom: 12px; color: #fff; text-align: center; }
-        .actions { margin-top: 20px; display:flex; justify-content:center; gap:10px; }
+        .card { max-width: 680px; width: 100%; background: rgba(8,8,12,0.96); border-radius: 16px; padding: 28px 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.03); text-align:center; }
+        .card h1 { font-size: clamp(20px, 2.8vw, 32px); margin-bottom: 12px; color: #fff; }
+        .card p { color: #dfeff6; margin-bottom: 18px; font-weight:600; }
+        .actions { margin-top: 10px; display:flex; justify-content:center; gap:10px; }
         button { padding: 10px 16px; border-radius: 8px; background: #22c7a6; border: none; font-weight: 700; color: #061510; cursor: pointer; }
         .hidden { display: none !important; }
 
-        #startHint { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 400; font-weight:700; color:#dfeff6; background: rgba(0,0,0,0.28); padding:8px 12px; border-radius:8px; }
+        #startHint { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); z-index: 400; font-weight:700; color:#dfeff6; background: rgba(0,0,0,0.28); padding:8px 12px; border-radius:10px; display:none; }
+
+        /* small responsive tweaks */
+        @media (max-width:520px){
+            #hud { gap:8px; padding:6px 8px; }
+            #counter { font-size:16px; }
+            #timer { font-size:13px; }
+            .card { padding:20px; }
+        }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
 
+    <div id="hud" aria-hidden="true">
+        <div id="counter">0 / 10</div>
+        <div id="timer">45</div>
+    </div>
+
     <div id="startScreen">
         <div class="card">
-            <h1>Can you design with something you cannot command?</h1>
+            <h1>Micrar.io</h1>
+            <p>Get 10 microbes inside the circle. Click to send a signal.</p>
             <div class="actions"><button id="startBtn">Start</button></div>
         </div>
     </div>
@@ -33,6 +68,7 @@
     <div id="summaryScreen" class="hidden">
         <div class="card">
             <h1>They went where they went.</h1>
+            <p id="closestLine">Closest: 0 of 10</p>
             <div class="actions"><button id="tryAgainBtn">Try again</button></div>
         </div>
     </div>
@@ -45,8 +81,13 @@
     function resize(){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
     window.addEventListener('resize', resize); resize();
 
+    const HUD = {
+        counterEl: document.getElementById('counter'),
+        timerEl: document.getElementById('timer'),
+    };
+
     const startHint = document.getElementById('startHint');
-    const microbeTypes = ['spiky','rod','coccus','flagella'];
+    const microbeTypes = ['bacillus','coccus','spirillum','vibrio','flagellate','ciliate'];
 
     let running = false;
     let ended = false;
@@ -57,7 +98,30 @@
     const pulses = [];
     const microbes = [];
 
-    const zone = { x: canvas.width / 2, y: canvas.height / 2, radius: 92 };
+    const zone = { x: canvas.width / 2, y: canvas.height / 2, radius: 96 };
+
+    // gameplay settings
+    const GOAL = 10;
+    const GAME_DURATION = 45 * 1000; // 45 seconds
+    const EARLY_PHASE_END = 25 * 1000; // first 25s
+    const LAST_PHASE_START = GAME_DURATION - 12 * 1000; // last 12s
+
+    let highestCount = 0;
+    let betrayalScheduledAt = 0;
+    let lastBetrayalTime = 0;
+
+    // background particles / vignette
+    const particles = [];
+    for(let i=0;i<80;i++){
+        particles.push({
+            x: Math.random()*canvas.width,
+            y: Math.random()*canvas.height,
+            vx: (Math.random()-0.5)*0.05,
+            vy: (Math.random()-0.5)*0.05,
+            size: 0.5 + Math.random()*1.8,
+            alpha: 0.04 + Math.random()*0.12
+        });
+    }
 
     function dayNightFactor(){
         return (Date.now() % 30000) / 30000;
@@ -68,29 +132,66 @@
     }
 
     function randColor(){
-        const palette = ['#9fffcf','#ffd8a8','#c8baff','#a8e7ff','#ffd1e6'];
+        const palette = ['rgba(160,250,200,0.78)','rgba(255,215,160,0.78)','rgba(200,185,255,0.78)','rgba(168,231,255,0.78)','rgba(255,209,230,0.78)'];
         return palette[Math.floor(Math.random() * palette.length)];
     }
 
+    // helper to get a number or fallback
+    function chooseCoord(v, fallback){
+        return (typeof v === 'number') ? v : fallback();
+    }
+
     function createMicrobe(x, y){
-        const radius = 8 + Math.random() * 22;
+        // accept 0 correctly
+        const px = chooseCoord(x, () => Math.random() * canvas.width);
+        const py = chooseCoord(y, () => Math.random() * canvas.height);
+
+        const baseRadius = 6 + Math.random()*10;
+        const bodyScale = 0.7 + Math.random() * 0.7; // 0.7 - 1.4
+        const radius = baseRadius * bodyScale;
+
         const angle = Math.random() * Math.PI * 2;
+        const type = randomMicrobeType();
+
+        // deterministic drawing parameters per microbe (no Math.random in draw)
+        const wobblePhase = Math.random() * Math.PI * 2;
+        const organelles = [];
+        const organelleCount = 2 + Math.floor(Math.random()*4);
+        for(let i=0;i<organelleCount;i++){
+            organelles.push({
+                ax: (Math.random()*1.6 - 0.8) * radius,
+                ay: (Math.random()*1.6 - 0.8) * radius,
+                r: Math.max(1, Math.random()*radius*0.38)
+            });
+        }
+        const color = randColor();
+        const membraneTint = 'rgba(255,255,255,0.08)';
+        const flagellaCount = (type === 'flagellate') ? (Math.random() < 0.6 ? 1 : 2) : 0;
+        const spiralParams = {
+            amplitude: 1 + Math.random()*1.4,
+            wavelength: 8 + Math.random()*10,
+            phaseOffset: Math.random()*Math.PI*2
+        };
+        const ciliaDensity = (type === 'ciliate') ? (8 + Math.floor(Math.random()*18)) : 0;
+        const chainPartner = (type === 'bacillus' && Math.random() < 0.18); // sometimes short chain
+
         return {
             id: Math.random().toString(36).slice(2, 9),
-            x: x || Math.random() * canvas.width,
-            y: y || Math.random() * canvas.height,
+            x: px,
+            y: py,
             radius,
-            type: randomMicrobeType(),
-            color: randColor(),
-            opacity: 0.8 + Math.random() * 0.2,
-            baseSpeed: 0.5 + Math.random() * 0.9,
+            type,
+            color,
+            membraneTint,
+            opacity: 0.78 + Math.random()*0.18,
+            baseSpeed: 0.6 + Math.random() * 1.0,
             direction: { x: Math.cos(angle), y: Math.sin(angle) },
             motilityState: 'run',
             runTimer: 0.6 + Math.random() * 1.6,
             tumbleTimer: 0,
             rhythmPhase: Math.random() * Math.PI * 2,
             communicationRadius: 60 + Math.random() * 80,
-            responseProb: 0.2 + Math.random() * 0.2,
+            responseProb: 0.22 + Math.random() * 0.26,
             responseMode: (function(){
                 const r = Math.random();
                 if(r < 0.5) return 'attract';
@@ -98,7 +199,21 @@
                 if(r < 0.85) return 'repel';
                 return 'ignore';
             })(),
-            individuality: Math.random()
+            individuality: Math.random(),
+            // drawing properties
+            wobblePhase,
+            organelles,
+            flagellaCount,
+            spiralParams,
+            ciliaDensity,
+            chainPartner,
+            bodyScale,
+            // internal state for rigging
+            lastRespondedAt: 0,
+            stickyUntil: 0,
+            ignorePulsesUntil: 0,
+            speedBurstUntil: 0,
+            lastLeftZoneAt: 0
         };
     }
 
@@ -114,63 +229,7 @@
         zone.y = canvas.height / 2;
     }
 
-    function drawMicrobe(targetCtx, x, y, r, type, color, opacity){
-        targetCtx.save();
-        targetCtx.translate(x, y);
-        targetCtx.globalAlpha = opacity;
-        const phase = (x + y + Date.now() / 140) % 1000;
-
-        if(type === 'spiky'){
-            const points = 10 + Math.floor(r / 3);
-            targetCtx.fillStyle = color;
-            targetCtx.beginPath();
-            for(let i = 0; i < points; i++){
-                const a = (i / points) * Math.PI * 2;
-                const wobble = Math.sin(a * 3 + phase * 0.01) * 0.1;
-                const rad = r * (0.8 + wobble);
-                const px = Math.cos(a) * rad;
-                const py = Math.sin(a) * rad;
-                if(i === 0) targetCtx.moveTo(px, py); else targetCtx.lineTo(px, py);
-            }
-            targetCtx.closePath();
-            targetCtx.fill();
-        } else if(type === 'rod'){
-            targetCtx.fillStyle = color;
-            targetCtx.beginPath();
-            const len = r * 2.0;
-            targetCtx.ellipse(0, 0, len, r * 0.9, 0, 0, Math.PI * 2);
-            targetCtx.fill();
-        } else if(type === 'coccus'){
-            targetCtx.fillStyle = color;
-            const count = 3 + Math.floor(r / 6);
-            for(let i = 0; i < count; i++){
-                const a = (i / count) * Math.PI * 2 + Math.sin(phase * 0.01 + i) * 0.2;
-                const rr = r * (0.35 + Math.random() * 0.35);
-                targetCtx.beginPath();
-                targetCtx.arc(Math.cos(a) * r * 0.25, Math.sin(a) * r * 0.25, rr, 0, Math.PI * 2);
-                targetCtx.fill();
-            }
-        } else if(type === 'flagella'){
-            targetCtx.fillStyle = color;
-            targetCtx.beginPath();
-            targetCtx.ellipse(0, 0, r * 0.9, r * 0.7, 0, 0, Math.PI * 2);
-            targetCtx.fill();
-            targetCtx.strokeStyle = color;
-            targetCtx.lineWidth = Math.max(1, r * 0.04);
-            targetCtx.beginPath();
-            targetCtx.moveTo(-r * 0.8, 0);
-            targetCtx.quadraticCurveTo(-r * 1.6, -r * 0.8, -r * 2.5, -r * 0.2);
-            targetCtx.stroke();
-        } else {
-            targetCtx.fillStyle = color;
-            targetCtx.beginPath();
-            targetCtx.arc(0, 0, r, 0, Math.PI * 2);
-            targetCtx.fill();
-        }
-
-        targetCtx.restore();
-    }
-
+    // background draw helpers
     function drawBackground(){
         const dn = dayNightFactor();
         const dayColor1 = { r: 30, g: 60, b: 114 };
@@ -186,23 +245,302 @@
         grad.addColorStop(1, c2);
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // vignette
+        const vg = ctx.createRadialGradient(canvas.width/2, canvas.height/2, Math.min(canvas.width, canvas.height)*0.2, canvas.width/2, canvas.height/2, Math.max(canvas.width, canvas.height)*0.75);
+        vg.addColorStop(0, 'rgba(0,0,0,0)');
+        vg.addColorStop(1, 'rgba(0,0,0,0.45)');
+        ctx.fillStyle = vg;
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+
+        // faint drifting debris
+        for(const p of particles){
+            p.x += p.vx;
+            p.y += p.vy;
+            if(p.x < -10) p.x = canvas.width + 10;
+            if(p.x > canvas.width + 10) p.x = -10;
+            if(p.y < -10) p.y = canvas.height + 10;
+            if(p.y > canvas.height + 10) p.y = -10;
+            ctx.fillStyle = `rgba(200,230,210,${p.alpha})`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+            ctx.fill();
+        }
+
+        // subtle grain - cheap approach
+        ctx.fillStyle = 'rgba(255,255,255,0.006)';
+        for(let i=0;i<60;i++){
+            const gx = (i*73 + Date.now()*0.02) % canvas.width;
+            const gy = (i*37 + Date.now()*0.01) % canvas.height;
+            ctx.fillRect(gx, gy, 1, 1);
+        }
     }
 
-    function drawZone(){
+    function drawZone(inZone){
+        // base soft pulse
+        const pulseBase = 0.9 + 0.2 * Math.sin(Date.now() * 0.004);
+        const progressBoost = 1 + (inZone / GOAL) * 1.6; // glow brighter with count
+        const outerAlpha = 0.12 * pulseBase * progressBoost;
+        const innerAlpha = 0.22 * pulseBase * progressBoost;
+
         ctx.save();
-        ctx.globalAlpha = 0.15;
+        // soft halo
+        const halo = ctx.createRadialGradient(zone.x, zone.y, zone.radius*0.2, zone.x, zone.y, zone.radius*2.2);
+        halo.addColorStop(0, `rgba(0,255,176,${innerAlpha})`);
+        halo.addColorStop(1, `rgba(0,255,176,0)`);
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(zone.x, zone.y, zone.radius * 2.2, 0, Math.PI*2);
+        ctx.fill();
+
+        // filled circle subtle
+        ctx.globalAlpha = 0.06 * progressBoost;
         ctx.fillStyle = '#00ffb0';
         ctx.beginPath();
         ctx.arc(zone.x, zone.y, zone.radius, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.globalAlpha = 0.28;
+        // outlined ring that pulses softly
+        ctx.globalAlpha = outerAlpha;
         ctx.strokeStyle = '#9effd7';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3 + 3 * Math.sin(Date.now() * 0.006);
         ctx.beginPath();
         ctx.arc(zone.x, zone.y, zone.radius + 6, 0, Math.PI * 2);
         ctx.stroke();
+
+        // target label center small
         ctx.restore();
+    }
+
+    // Drawing microbes - no Math.random inside these calls. Use microbe's stored properties.
+    function drawMicrobe(targetCtx, e, now){
+        targetCtx.save();
+        targetCtx.translate(e.x, e.y);
+        // rotate to face travel direction smoothly
+        const angle = Math.atan2(e.direction.y, e.direction.x);
+        // smooth rotation by mixing previous stored angle if present
+        if(typeof e.drawAngle !== 'number') e.drawAngle = angle;
+        // interpolate
+        const da = angle - e.drawAngle;
+        // wrap
+        const wrapped = ((da + Math.PI) % (Math.PI*2)) - Math.PI;
+        e.drawAngle += wrapped * 0.18; // smoothing factor
+        targetCtx.rotate(e.drawAngle);
+
+        const r = e.radius;
+        const opacity = e.opacity;
+        // radial gradient body
+        const grad = targetCtx.createRadialGradient(-r*0.25, -r*0.25, r*0.1, 0, 0, r*1.05);
+        // use the stored color string but make slightly darker for center
+        // parse simple rgba or use fallback tints
+        grad.addColorStop(0, 'rgba(30,30,36,0.9)');
+        grad.addColorStop(0.5, e.color);
+        grad.addColorStop(1, 'rgba(10,10,14,0.06)');
+
+        targetCtx.globalAlpha = opacity;
+
+        // draw types
+        if(e.type === 'bacillus'){
+            // capsule with optional chain partner
+            const len = r * (1.8 + (e.chainPartner ? 0.9 : 0));
+            targetCtx.fillStyle = grad;
+            targetCtx.beginPath();
+            // rounded capsule: rect with semicircles
+            targetCtx.moveTo(-len/2 + r, -r);
+            targetCtx.arc(-len/2 + r, 0, r, -Math.PI/2, Math.PI/2);
+            targetCtx.lineTo(len/2 - r, r);
+            targetCtx.arc(len/2 - r, 0, r, Math.PI/2, -Math.PI/2);
+            targetCtx.closePath();
+            targetCtx.fill();
+
+            // membrane outline
+            targetCtx.strokeStyle = e.membraneTint;
+            targetCtx.lineWidth = Math.max(1, r*0.13);
+            targetCtx.stroke();
+
+            // organelles
+            targetCtx.fillStyle = 'rgba(20,30,20,0.55)';
+            for(const o of e.organelles){
+                targetCtx.beginPath();
+                targetCtx.ellipse(o.ax, o.ay, o.r*0.9, o.r*0.7, 0, 0, Math.PI*2);
+                targetCtx.fill();
+            }
+            // if chainPartner draw a smaller capsule offset
+            if(e.chainPartner){
+                targetCtx.translate(len*0.6, 0);
+                targetCtx.fillStyle = grad;
+                targetCtx.beginPath();
+                targetCtx.moveTo(-len/4 + r*0.6, -r*0.78);
+                targetCtx.arc(-len/4 + r*0.6, 0, r*0.6, -Math.PI/2, Math.PI/2);
+                targetCtx.lineTo(len/4 - r*0.6, r*0.6);
+                targetCtx.arc(len/4 - r*0.6, 0, r*0.6, Math.PI/2, -Math.PI/2);
+                targetCtx.closePath();
+                targetCtx.fill();
+            }
+        } else if(e.type === 'coccus'){
+            // small clustered spheres
+            const count = 2 + Math.floor((r/6) + (e.bodyScale*1.2));
+            const spacing = r * 0.9;
+            const positions = [];
+            // deterministic positions based on wobblePhase
+            for(let i=0;i<count;i++){
+                const a = (i / count) * Math.PI * 2 + e.wobblePhase;
+                const px = Math.cos(a) * spacing * 0.6;
+                const py = Math.sin(a) * spacing * 0.18;
+                positions.push([px, py]);
+            }
+            targetCtx.fillStyle = grad;
+            for(const p of positions){
+                targetCtx.beginPath();
+                targetCtx.arc(p[0], p[1], r*0.62, 0, Math.PI*2);
+                targetCtx.fill();
+                targetCtx.strokeStyle = e.membraneTint;
+                targetCtx.lineWidth = Math.max(0.7, r*0.06);
+                targetCtx.stroke();
+            }
+            // inner granules
+            targetCtx.fillStyle = 'rgba(12,18,14,0.6)';
+            for(const p of positions.slice(0, Math.min(3, positions.length))){
+                targetCtx.beginPath();
+                targetCtx.arc(p[0]*0.5, p[1]*0.4, r*0.16, 0, Math.PI*2);
+                targetCtx.fill();
+            }
+        } else if(e.type === 'spirillum'){
+            // draw a sine ribbon along the x axis
+            const length = r * 3.0;
+            const steps = 14;
+            const amp = e.spiralParams.amplitude * (r * 0.22);
+            const wave = (now*0.002)*0.9 + e.spiralParams.phaseOffset;
+            targetCtx.lineCap = 'round';
+            targetCtx.lineJoin = 'round';
+            targetCtx.strokeStyle = e.color;
+            targetCtx.lineWidth = Math.max(2, r*0.9);
+            targetCtx.beginPath();
+            for(let i=0;i<=steps;i++){
+                const t = i/steps;
+                const x = -length/2 + t*length;
+                const y = Math.sin(t * Math.PI * 2 * (length / e.spiralParams.wavelength) + wave) * amp;
+                if(i===0) targetCtx.moveTo(x,y); else targetCtx.lineTo(x,y);
+            }
+            targetCtx.stroke();
+            // darker center line
+            targetCtx.strokeStyle = 'rgba(8,14,10,0.6)';
+            targetCtx.lineWidth = Math.max(0.6, r*0.26);
+            targetCtx.beginPath();
+            for(let i=0;i<=steps;i++){
+                const t = i/steps;
+                const x = -length/2 + t*length;
+                const y = Math.sin(t * Math.PI * 2 * (length / e.spiralParams.wavelength) + wave) * amp * 0.45;
+                if(i===0) targetCtx.moveTo(x,y); else targetCtx.lineTo(x,y);
+            }
+            targetCtx.stroke();
+        } else if(e.type === 'vibrio'){
+            // comma-shaped curved rod: draw a rounded ellipse then a tail curve
+            targetCtx.fillStyle = grad;
+            targetCtx.beginPath();
+            const len = r * 1.9;
+            targetCtx.ellipse(-len*0.08, 0, len, r*0.92, -0.28, 0, Math.PI*2);
+            targetCtx.fill();
+            targetCtx.strokeStyle = e.membraneTint;
+            targetCtx.lineWidth = Math.max(0.9, r*0.1);
+            targetCtx.stroke();
+
+            // add tail highlight
+            targetCtx.strokeStyle = 'rgba(255,255,255,0.06)';
+            targetCtx.lineWidth = Math.max(0.6, r*0.06);
+            targetCtx.beginPath();
+            targetCtx.moveTo(len*0.3, -r*0.2);
+            targetCtx.quadraticCurveTo(len*0.8, 0, len*0.4, r*0.5);
+            targetCtx.stroke();
+
+            // inner nucleoids
+            targetCtx.fillStyle = 'rgba(12,18,14,0.58)';
+            for(const o of e.organelles){
+                targetCtx.beginPath();
+                targetCtx.ellipse(o.ax*0.5, o.ay*0.4, o.r*0.9, o.r*0.7, 0, 0, Math.PI*2);
+                targetCtx.fill();
+            }
+        } else if(e.type === 'flagellate'){
+            // oval body + waving flagella linked to speed
+            targetCtx.fillStyle = grad;
+            targetCtx.beginPath();
+            targetCtx.ellipse(0,0, r*1.0, r*0.72, 0, 0, Math.PI*2);
+            targetCtx.fill();
+            targetCtx.strokeStyle = e.membraneTint;
+            targetCtx.lineWidth = Math.max(0.8, r*0.09);
+            targetCtx.stroke();
+
+            // flagella
+            const speedFactor = Math.min(2.2, 0.6 + Math.hypot(e.direction.x, e.direction.y) * 0.9 + (e.baseSpeed*0.2));
+            for(let f=0; f<e.flagellaCount; f++){
+                const phase = e.wobblePhase + f*1.9;
+                const waveSpeed = 0.008 * speedFactor;
+                const length = r*3.2;
+                targetCtx.strokeStyle = 'rgba(160,200,190,0.48)';
+                targetCtx.lineWidth = Math.max(1, r*0.12);
+                targetCtx.beginPath();
+                for(let i=0;i<=28;i++){
+                    const t = i/28;
+                    const x = -r*0.4 + t*length;
+                    const y = Math.sin(t*6 + now*waveSpeed + phase) * (r*0.25) * (1 + 0.4*Math.sin(now*0.002 + phase));
+                    if(i===0) targetCtx.moveTo(x,y); else targetCtx.lineTo(x,y);
+                }
+                targetCtx.stroke();
+            }
+
+            // inner dense nucleoid
+            targetCtx.fillStyle = 'rgba(18,20,22,0.62)';
+            targetCtx.beginPath();
+            targetCtx.ellipse(-r*0.14, 0, r*0.36, r*0.28, -0.14, 0, Math.PI*2);
+            targetCtx.fill();
+        } else if(e.type === 'ciliate'){
+            // slipper shaped with cilia on edge
+            const len = r*2.1;
+            targetCtx.fillStyle = grad;
+            targetCtx.beginPath();
+            targetCtx.moveTo(-len/2 + r*0.6, -r*0.9);
+            targetCtx.quadraticCurveTo(len/2, -r*0.9, len/2, 0);
+            targetCtx.quadraticCurveTo(len/2, r*0.9, -len/2 + r*0.6, r*0.9);
+            targetCtx.arc(-len/2 + r*0.6, 0, r*0.9, Math.PI/2, -Math.PI/2, true);
+            targetCtx.closePath();
+            targetCtx.fill();
+
+            targetCtx.strokeStyle = e.membraneTint;
+            targetCtx.lineWidth = Math.max(0.8, r*0.08);
+            targetCtx.stroke();
+
+            // cilia - small strokes along edge, animate wave
+            const wave = Math.sin(now*0.007 + e.wobblePhase) * 0.8;
+            targetCtx.strokeStyle = 'rgba(220,240,230,0.18)';
+            targetCtx.lineWidth = Math.max(0.6, r*0.06);
+            for(let i=0;i<e.ciliaDensity;i++){
+                const a = (i / e.ciliaDensity) * Math.PI * 2;
+                const px = Math.cos(a) * r * 1.1;
+                const py = Math.sin(a) * r * 0.9;
+                const lenc = 2 + (wave + Math.sin(i + now*0.005))*1.8;
+                targetCtx.beginPath();
+                targetCtx.moveTo(px*0.9, py*0.9);
+                targetCtx.lineTo(px*1.1 + (Math.cos(a+wave)*0.6), py*1.1 + (Math.sin(a+wave)*0.6));
+                targetCtx.stroke();
+            }
+            targetCtx.fillStyle = 'rgba(8,12,10,0.54)';
+            for(const o of e.organelles){
+                targetCtx.beginPath();
+                targetCtx.arc(o.ax*0.6, o.ay*0.6, o.r*0.8, 0, Math.PI*2);
+                targetCtx.fill();
+            }
+        } else {
+            // fallback simple sphere
+            targetCtx.fillStyle = grad;
+            targetCtx.beginPath();
+            targetCtx.arc(0,0,r,0,Math.PI*2);
+            targetCtx.fill();
+            targetCtx.strokeStyle = e.membraneTint;
+            targetCtx.lineWidth = Math.max(0.8, r*0.08);
+            targetCtx.stroke();
+        }
+
+        targetCtx.restore();
     }
 
     function drawPulses(){
@@ -212,6 +550,7 @@
             const t = Math.min(1, Math.max(0, elapsed / p.duration));
             const radius = t * p.maxRadius;
             ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = 0.9 * (1 - t);
             ctx.strokeStyle = `rgba(160, 240, 200, ${0.85 * (1 - t)})`;
             ctx.lineWidth = 3 + 3 * (1 - t);
@@ -222,27 +561,8 @@
         }
     }
 
-    function drawMicrobes(){
-        for(const e of microbes){
-            drawMicrobe(ctx, e.x, e.y, e.radius, e.type, e.color, e.opacity);
-        }
-    }
-
-    function drawCursor(){
-        ctx.save();
-        ctx.translate(cursor.x, cursor.y);
-        ctx.strokeStyle = 'rgba(230, 245, 255, 0.8)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(0, 0, 8, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(-10, 0); ctx.lineTo(10, 0); ctx.moveTo(0, -10); ctx.lineTo(0, 10);
-        ctx.stroke();
-        ctx.restore();
-    }
-
-    function updateMicrobe(e, dt){
+    function updateMicrobe(e, dt, now, phaseTime){
+        // run/tumble state
         if(e.motilityState === 'run'){
             e.runTimer -= dt;
             if(e.runTimer <= 0){
@@ -268,6 +588,7 @@
 
         let desired = { x: e.direction.x, y: e.direction.y };
 
+        // simple flocking-like communication (keeps groups)
         let comm = { x: 0, y: 0 };
         let nearby = 0;
         for(const o of microbes){
@@ -286,8 +607,8 @@
             desired.y += comm.y;
         }
 
+        // pulses influence - mark lastRespondedAt so "sticky" can apply
         let pulseInfluence = { x: 0, y: 0 };
-        const now = Date.now();
         for(const p of pulses){
             const elapsed = (now - p.started) / 1000;
             if(elapsed < 0 || elapsed > p.duration) continue;
@@ -297,6 +618,9 @@
             const dist = Math.hypot(dx, dy) || 0.0001;
             const pulseRadius = elapsed / p.duration * p.maxRadius;
             if(dist > pulseRadius + 30) continue;
+
+            // cannot respond if ignoring pulses
+            if(now < e.ignorePulsesUntil) continue;
 
             const willRespond = Math.random() < e.responseProb;
             if(!willRespond) continue;
@@ -317,10 +641,14 @@
                 pulseInfluence.x += nx * strength;
                 pulseInfluence.y += ny * strength;
             }
+
+            // record that this microbe responded
+            e.lastRespondedAt = now;
+            // if pulse is near center and they move inside, we will make them sticky in early phase
         }
 
-        desired.x += pulseInfluence.x * 0.8 + (Math.random() - 0.5) * 0.14;
-        desired.y += pulseInfluence.y * 0.8 + (Math.random() - 0.5) * 0.14;
+        desired.x += pulseInfluence.x * 0.9 + (Math.random() - 0.5) * 0.14;
+        desired.y += pulseInfluence.y * 0.9 + (Math.random() - 0.5) * 0.14;
 
         const mag = Math.hypot(desired.x, desired.y) || 1;
         desired.x /= mag;
@@ -328,32 +656,61 @@
 
         const rhythm = Math.sin(e.rhythmPhase + dn * Math.PI * 2);
         e.rhythmPhase += dt * (0.7 + dn * 1.2);
-        const speed = Math.max(0.1, e.baseSpeed * (0.6 + 0.9 * (1 - Math.abs(0.5 - dn) * 2)) + Math.abs(rhythm) * 0.12);
+        // speed influenced by dayNight and rhythm
+        const baseSpeed = Math.max(0.1, e.baseSpeed * (0.6 + 0.9 * (1 - Math.abs(0.5 - dn) * 2)) + Math.abs(rhythm) * 0.12);
+
+        // sticky behavior: early phase, if microbe recently responded and is near center, make sticky slow tumble less
+        const timeSinceStart = now - gameStartTime;
+        if(timeSinceStart < EARLY_PHASE_END){
+            if(e.lastRespondedAt > now - 2200 && Math.hypot(e.x - zone.x, e.y - zone.y) < zone.radius + e.radius*0.6){
+                e.stickyUntil = Math.max(e.stickyUntil, now + 2200 + Math.random()*1600);
+            }
+        }
+
+        // apply sticky properties
+        let speed = baseSpeed;
+        if(now < e.stickyUntil){
+            // slower, tumble less often
+            speed *= 0.46;
+            // prolong run
+            if(e.motilityState === 'run') e.runTimer += dt * 0.9;
+        }
+
+        // speed burst if scheduled
+        if(now < e.speedBurstUntil){
+            speed *= 1.9 + Math.random()*0.6;
+        }
+
+        // last-phase drift: in last 12s, microbes inside zone have increased chance to drift out
+        if(timeSinceStart > LAST_PHASE_START){
+            if(Math.random() < 0.008 + (Math.hypot(e.x-zone.x, e.y-zone.y) / (zone.radius+e.radius))*0.02){
+                // nudge outward
+                const dx = e.x - zone.x;
+                const dy = e.y - zone.y;
+                const d = Math.hypot(dx,dy) || 0.0001;
+                desired.x += (dx/d) * (0.24 + Math.random()*0.26);
+                desired.y += (dy/d) * (0.24 + Math.random()*0.26);
+                // and reduce response probability
+                e.responseProb *= 0.94;
+            }
+        }
 
         const moveScale = e.motilityState === 'run' ? 1 : 0.34;
         e.x += desired.x * speed * moveScale;
         e.y += desired.y * speed * moveScale;
 
+        // apply bounds
         if(e.x - e.radius < 0){ e.x = e.radius; e.direction.x *= -1; }
         if(e.x + e.radius > canvas.width){ e.x = canvas.width - e.radius; e.direction.x *= -1; }
         if(e.y - e.radius < 0){ e.y = e.radius; e.direction.y *= -1; }
         if(e.y + e.radius > canvas.height){ e.y = canvas.height - e.radius; e.direction.y *= -1; }
+
+        // manage ignore pulses timeout (set when we force-make microbes leave)
+        // lastLeftZoneAt recorded elsewhere
+
     }
 
-    function update(dt){
-        if(!running || ended) return;
-
-        const now = Date.now();
-        for(let i = pulses.length - 1; i >= 0; i--){
-            if(now - pulses[i].started > pulses[i].duration * 1000){
-                pulses.splice(i, 1);
-            }
-        }
-
-        for(const e of microbes){
-            updateMicrobe(e, dt);
-        }
-
+    function countInZone(){
         let inZone = 0;
         for(const e of microbes){
             const dx = e.x - zone.x;
@@ -363,27 +720,130 @@
                 inZone++;
             }
         }
+        return inZone;
+    }
 
-        if(inZone >= 10){
-            // The objective is real, but the game still ends on the timer. This keeps the goal meaningful without creating a modal win state.
+    function forceMicrobesLeave(n){
+        // pick up to n microbes currently inside zone and force them out with tumble and burst
+        const inside = microbes.filter(e => Math.hypot(e.x - zone.x, e.y - zone.y) <= zone.radius + e.radius*0.6);
+        if(inside.length === 0) return;
+        // shuffle shallow copy
+        const shuffled = inside.slice();
+        for(let i=shuffled.length-1;i>0;i--){
+            const j = Math.floor(Math.random()*(i+1));
+            const tmp = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = tmp;
+        }
+        const toTake = Math.min(n, shuffled.length);
+        const now = Date.now();
+        for(let i=0;i<toTake;i++){
+            const e = shuffled[i];
+            // set tumble and immediate new direction away from center
+            e.motilityState = 'run';
+            const dx = e.x - zone.x;
+            const dy = e.y - zone.y;
+            const d = Math.hypot(dx,dy) || 0.0001;
+            e.direction.x = (dx/d) + (Math.random()*0.6 - 0.3);
+            e.direction.y = (dy/d) + (Math.random()*0.6 - 0.3);
+            // speed burst and ignore pulses for a short while
+            e.speedBurstUntil = now + 600 + Math.random()*700; // 0.6 - 1.3s
+            e.ignorePulsesUntil = now + 1400 + Math.random()*1400; // ignore pulses 1.4 - 2.8s
+            e.lastLeftZoneAt = now;
+            // small immediate position nudge outward so it's visible
+            e.x += (e.direction.x / Math.hypot(e.direction.x, e.direction.y)) * (6 + Math.random()*8);
+            e.y += (e.direction.y / Math.hypot(e.direction.x, e.direction.y)) * (6 + Math.random()*8);
+        }
+    }
+
+    function scheduleBetrayalIfNeeded(inZone){
+        const now = Date.now();
+        // if count reached 9 and we haven't scheduled recently, schedule betrayal
+        if(inZone >= (GOAL - 1)){
+            if(betrayalScheduledAt === 0 && (now - lastBetrayalTime > 2500)){
+                betrayalScheduledAt = now + 500 + Math.random()*1000; // 0.5 - 1.5s
+            }
+        }
+        if(betrayalScheduledAt !== 0 && now >= betrayalScheduledAt){
+            // execute betrayal: send 2-3 microbes out
+            forceMicrobesLeave(2 + Math.floor(Math.random()*2));
+            lastBetrayalTime = now;
+            betrayalScheduledAt = 0;
+        }
+    }
+
+    function update(dt){
+        if(!running || ended) return;
+
+        const now = Date.now();
+
+        // trim pulses
+        for(let i = pulses.length - 1; i >= 0; i--){
+            if(now - pulses[i].started > pulses[i].duration * 1000){
+                pulses.splice(i, 1);
+            }
         }
 
-        if((Date.now() - gameStartTime) >= 60000){
+        for(const e of microbes){
+            updateMicrobe(e, dt, now);
+        }
+
+        // count inside zone
+        const inZone = countInZone();
+
+        // update highest
+        if(inZone > highestCount) highestCount = inZone;
+
+        // schedule betrayal logic and ensure 10 cannot be held
+        scheduleBetrayalIfNeeded(inZone);
+        if(inZone >= GOAL){
+            // if at any point the count hits 10, force at least 2 out quickly
+            forceMicrobesLeave(2);
+        }
+
+        // update HUD
+        HUD.counterEl.textContent = `${inZone} / ${GOAL}`;
+
+        // update timer
+        const timeLeft = Math.max(0, GAME_DURATION - (now - gameStartTime));
+        HUD.timerEl.textContent = Math.ceil(timeLeft / 1000).toString();
+
+        // increase circle glow as count rises is handled in drawZone via inZone param
+
+        // endgame check
+        if((Date.now() - gameStartTime) >= GAME_DURATION){
             endGame();
         }
     }
 
     function draw(){
+        const now = Date.now();
         drawBackground();
         drawPulses();
-        drawZone();
-        drawMicrobes();
-        drawCursor();
+        const inZone = countInZone();
+        drawZone(inZone);
+        // draw microbes ordered by y for slight depth
+        const sorted = microbes.slice().sort((a,b)=> a.y - b.y);
+        for(const e of sorted){
+            drawMicrobe(ctx, e, now);
+        }
+        // cursor
+        ctx.save();
+        ctx.translate(cursor.x, cursor.y);
+        ctx.strokeStyle = 'rgba(230, 245, 255, 0.8)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, 8, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-10, 0); ctx.lineTo(10, 0); ctx.moveTo(0, -10); ctx.lineTo(0, 10);
+        ctx.stroke();
+        ctx.restore();
 
         if(running && !ended){
             startHint.classList.remove('hidden');
+            startHint.style.display = 'block';
         } else {
             startHint.classList.add('hidden');
+            startHint.style.display = 'none';
         }
     }
 
@@ -391,8 +851,14 @@
         running = true;
         ended = false;
         gameStartTime = Date.now();
+        lastTime = Date.now();
         pulses.length = 0;
+        highestCount = 0;
+        betrayalScheduledAt = 0;
+        lastBetrayalTime = 0;
+
         createPopulation(40);
+
         document.getElementById('startScreen').classList.add('hidden');
         document.getElementById('summaryScreen').classList.add('hidden');
         startHint.classList.remove('hidden');
@@ -404,25 +870,17 @@
         running = false;
         document.getElementById('summaryScreen').classList.remove('hidden');
         startHint.classList.add('hidden');
+        document.getElementById('closestLine').textContent = `Closest: ${highestCount} of ${GOAL}`;
     }
 
+    // input handlers
     window.addEventListener('mousemove', (event) => {
         cursor.x = event.clientX;
         cursor.y = event.clientY;
     });
 
-    window.addEventListener('mousedown', () => {
-        if(!running) return;
-        pulses.push({
-            x: cursor.x,
-            y: cursor.y,
-            started: Date.now(),
-            duration: 2,
-            maxRadius: 360
-        });
-    });
-
-    window.addEventListener('pointerdown', () => {
+    // use only pointerdown to create pulses (fix duplicate from mousedown+pointerdown)
+    window.addEventListener('pointerdown', (ev) => {
         if(!running) return;
         pulses.push({
             x: cursor.x,
@@ -440,9 +898,10 @@
 
     document.getElementById('startBtn').addEventListener('click', startGame);
     document.getElementById('tryAgainBtn').addEventListener('click', () => {
-        document.getElementById('startScreen').classList.remove('hidden');
+        // restart immediately
+        document.getElementById('startScreen').classList.add('hidden');
         document.getElementById('summaryScreen').classList.add('hidden');
-        startHint.classList.add('hidden');
+        startGame();
     });
 
     function loop(){
