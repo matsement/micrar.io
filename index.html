@@ -8,7 +8,7 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 100%; height: 100%; }
         body { font-family: Arial, sans-serif; overflow: hidden; background-color: #0b1230; color: #e6eef6; }
-        canvas { display: block; }
+        canvas { display: block; touch-action: none; }
 
         #hud {
             position: absolute;
@@ -31,7 +31,7 @@
         #timer { font-size: 16px; opacity:0.9; font-weight:800; color:#cfeef0; }
 
         #startScreen, #summaryScreen { position: absolute; inset: 0; z-index: 500; display: flex; align-items: center; justify-content: center; padding: 30px; }
-        .card { max-width: 680px; width: 100%; background: rgba(8,8,12,0.96); border-radius: 16px; padding: 28px 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.04); }
+        .card { max-width: 680px; width: 100%; background: rgba(8,8,12,0.96); border-radius: 16px; padding: 28px 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.03); }
         .card h1 { font-size: clamp(20px, 2.8vw, 32px); margin-bottom: 12px; color: #fff; }
         .card p { color: #dfeff6; margin-bottom: 18px; font-weight:600; }
         .actions { margin-top: 10px; display:flex; justify-content:center; gap:10px; }
@@ -58,15 +58,15 @@
 
     <div id="startScreen">
         <div class="card">
-            <h1>Can you design with something you cannot command?</h1>
-            <p>Get 10 microbes inside the circle. Click to collect them.</p>
+            <h1>Micrar.io</h1>
+            <p>Get 10 microbes inside the circle. You have 45 seconds. Click to push them.</p>
             <div class="actions"><button id="startBtn">Start</button></div>
         </div>
     </div>
 
     <div id="summaryScreen" class="hidden">
         <div class="card">
-            <h1>They went where they went.</h1>
+            <h1>Can you design with something you cannot command?</h1>
             <p id="closestLine">Closest: 0 of 10</p>
             <div class="actions"><button id="tryAgainBtn">Try again</button></div>
         </div>
@@ -75,10 +75,65 @@
     <div id="startHint" class="hidden">Guide them.</div>
 
     <script>
+    // ----- GAME & TUNING CONSTANTS (easy to tweak) -----
+    // NOTE: everything that resize() touches is declared BEFORE the first resize() call.
+    const DEBUG = false;                 // show live inside count & control for testing
+
+    const GOAL = 10;                     // shown to player
+    const CEILING = 9;                   // hard invariant: never allow more than 9 inside
+    const GAME_DURATION = 45 * 1000;
+
+    // Control timeline (seconds)
+    const CONTROL_HOLD_SEC = 20;
+    const CONTROL_FADE_TO_SEC = 30;
+    const CONTROL_END_SEC = 45;
+
+    const CONTROL_FULL = 1.0;
+    const CONTROL_MID = 0.55;
+    const CONTROL_LOW = 0.05;
+
+    // Pulse tuning
+    const PULSE_MAX_RADIUS = 480;
+    const PULSE_DURATION = 2.2;
+    const PULSE_INTERVAL_MS = 300;
+    const PULSE_STRENGTH_MULT = 1.6;
+
+    // Response probabilities & stickiness
+    const RESPONSE_PROB_BASE = 0.9;
+    const STICKY_SPEED_MULT = 0.30;      // speed multiplier inside the circle when control is 1
+    const STICKY_PULL_BASE = 0.6;
+
+    // Help timings
+    const GUARANTEE_NINE_TIME_MS = 26000;
+    const FIRST_CLICK_BOOST_MS = 1400;
+    const BOOST_AFTER_TIMEOUT_MS = 5000;
+
+    // Betrayal timings & ignore durations
+    const BETRAY_IGNORE_MIN_MS = 4000;
+    const BETRAY_IGNORE_MAX_MS = 6000;
+    const HOLD_AT_NINE_MIN_MS = 1000;    // first time at 9: nobody leaves for 1-2s
+    const HOLD_AT_NINE_MAX_MS = 2000;
+    const LATER_BETRAY_MIN_DELAY_MS = 500;
+    const LATER_BETRAY_MAX_DELAY_MS = 1500;
+
+    const LAST_PHASE_START = GAME_DURATION - 12 * 1000;
+    // ---------------------------------------------------
+
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    function resize(){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
-    window.addEventListener('resize', resize); resize();
+    const zone = { x: 0, y: 0, radius: 96 };   // declared before resize() is first called
+
+    function ensureZonePosition(){
+        zone.x = canvas.width / 2;
+        zone.y = canvas.height / 2;
+    }
+    function resize(){
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        ensureZonePosition();
+    }
+    window.addEventListener('resize', resize);
+    resize();
 
     const HUD = {
         counterEl: document.getElementById('counter'),
@@ -97,63 +152,15 @@
     const pulses = [];
     const microbes = [];
 
-    const zone = { x: canvas.width / 2, y: canvas.height / 2, radius: 96 };
-
-    // ----- GAME & TUNING CONSTANTS (easy to tweak) -----
-    const GOAL = 10;
-    const GAME_DURATION = 45 * 1000;
-
-    // Control timeline (seconds)
-    const CONTROL_HOLD_SEC = 20;          // hold control at 1.0 until this many seconds
-    const CONTROL_FADE_TO_SEC = 30;       // control fades to mid value by this second
-    const CONTROL_END_SEC = 45;           // control reaches near-zero at this second
-
-    // Control target values
-    const CONTROL_FULL = 1.0;
-    const CONTROL_MID = 0.55;
-    const CONTROL_LOW = 0.05;
-
-    // Pulse tuning
-    const PULSE_MAX_RADIUS = 480;
-    const PULSE_DURATION = 2.2; // seconds
-    const PULSE_INTERVAL_MS = 300; // click-and-hold interval
-    const PULSE_STRENGTH_MULT = 1.3; // extra multiplier to make microbes respond faster
-
-    // Response probabilities & stickiness
-    const RESPONSE_PROB_BASE = 0.9; // about 0.9 when control==1
-    const STICKY_SPEED_MULT = 0.30; // speed multiplier when sticky (30%)
-    const STICKY_TUMBLE_REDUCTION = 0.6; // reduce tumble frequency when sticky (scale)
-    const STICKY_PULL_BASE = 0.6; // base pull toward centre when sticky (scales with control)
-
-    // Guarantee/help timings
-    const GUARANTEE_NINE_TIME_MS = 26000; // ~26s: if player hasn't hit 9 by this time, boost them
-    const FIRST_CLICK_BOOST_MS = 1400; // first click temporary boost
-    const BOOST_AFTER_TIMEOUT_MS = 5000; // how long the temporary "help" lasts when boosting
-
-    // Betrayal timings
-    const TEN_RESPONSE_DELAY_MIN = 300; // milliseconds before one/two microbes suddenly leave after 10th enters
-    const TEN_RESPONSE_DELAY_MAX = 600;
-    const BETRAY_IGNORE_MIN_MS = 4000; // microbes leaving ignore pulses 4-6s
-    const BETRAY_IGNORE_MAX_MS = 6000;
-    const HOLD_AT_NINE_MIN_MS = 1000; // hold 1-2s when count reaches 9
-    const HOLD_AT_NINE_MAX_MS = 2000;
-    const LATER_BETRAY_MIN_DELAY_MS = 500; // 0.5 - 1.5s for later betrayals
-    const LATER_BETRAY_MAX_DELAY_MS = 1500;
-
-    // Last-phase weakening
-    const LAST_PHASE_START = GAME_DURATION - 12 * 1000;
-
-    // ---------------------------------------------------
-
     let highestCount = 0;
-    let betrayalScheduledAt = 0;
-    let lastBetrayalTime = 0;
-    let reachedNineAt = 0;
     let reachedNineOnce = false;
+    let pendingBetrayalAt = 0;
     let firstClickBoostUntil = 0;
-    let pointerDown = false;
-    let pointerPulseInterval = null;
     let helpBoostUntil = 0;
+    let pointerDown = false;
+    let lastPulseAt = 0;
+    let lastInZone = 0;
+    let liveInsideCount = 0;
 
     const particles = [];
     for(let i=0;i<80;i++){
@@ -182,6 +189,10 @@
 
     function chooseCoord(v, fallback){
         return (typeof v === 'number') ? v : fallback();
+    }
+
+    function randInt(min, max){
+        return Math.floor(Math.random()*(max-min+1)) + min;
     }
 
     function createMicrobe(x, y){
@@ -231,7 +242,6 @@
             tumbleTimer: 0,
             rhythmPhase: Math.random() * Math.PI * 2,
             communicationRadius: 95 + Math.random() * 120,
-            // per-microbe baseline response probability (will be scaled by global control)
             responseProbBase: 0.6 + Math.random() * 0.18,
             responseMode: (function(){
                 const r = Math.random();
@@ -254,20 +264,32 @@
             ignorePulsesUntil: 0,
             speedBurstUntil: 0,
             lastLeftZoneAt: 0,
-            modeAssignedAt: 0 // timestamp when responseMode was last (re)assigned
+            modeAssignedAt: 0,
+            enteredAt: 0
         };
+    }
+
+    // isInside: center distance to circle center only. Used everywhere.
+    function isInside(m){
+        return Math.hypot(m.x - zone.x, m.y - zone.y) <= zone.radius;
+    }
+
+    function countInZone(){
+        let n = 0;
+        for(const e of microbes) if(isInside(e)) n++;
+        return n;
     }
 
     function createPopulation(count){
         microbes.length = 0;
         for(let i = 0; i < count; i++){
-            microbes.push(createMicrobe());
+            let m = createMicrobe();
+            // spawn outside the circle so the player starts at 0
+            for(let tries = 0; tries < 30 && isInside(m); tries++){
+                m = createMicrobe();
+            }
+            microbes.push(m);
         }
-    }
-
-    function ensureZonePosition(){
-        zone.x = canvas.width / 2;
-        zone.y = canvas.height / 2;
     }
 
     function drawBackground(){
@@ -334,9 +356,9 @@
         ctx.arc(zone.x, zone.y, zone.radius, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.globalAlpha = outerAlpha;
+        ctx.globalAlpha = Math.min(1, outerAlpha);
         ctx.strokeStyle = '#9effd7';
-        ctx.lineWidth = 3 + 3 * Math.sin(Date.now() * 0.006);
+        ctx.lineWidth = 4 + 2 * Math.sin(Date.now() * 0.006);
         ctx.beginPath();
         ctx.arc(zone.x, zone.y, zone.radius + 6, 0, Math.PI * 2);
         ctx.stroke();
@@ -521,7 +543,6 @@
                 const a = (i / e.ciliaDensity) * Math.PI * 2;
                 const px = Math.cos(a) * r * 1.1;
                 const py = Math.sin(a) * r * 0.9;
-                const lenc = 2 + (wave + Math.sin(i + now*0.005))*1.8;
                 targetCtx.beginPath();
                 targetCtx.moveTo(px*0.9, py*0.9);
                 targetCtx.lineTo(px*1.1 + (Math.cos(a+wave)*0.6), py*1.1 + (Math.sin(a+wave)*0.6));
@@ -564,13 +585,12 @@
         }
     }
 
-    // compute control value (0..1) based on elapsed game time
+    // control value (0..1) from elapsed game time
     function controlValue(now){
         if(!running) return CONTROL_FULL;
         const elapsed = (now - gameStartTime) / 1000;
         if(elapsed <= CONTROL_HOLD_SEC) return CONTROL_FULL;
         if(elapsed <= CONTROL_FADE_TO_SEC){
-            // linear from HOLD -> MID
             const t = (elapsed - CONTROL_HOLD_SEC) / (CONTROL_FADE_TO_SEC - CONTROL_HOLD_SEC);
             return CONTROL_FULL + (CONTROL_MID - CONTROL_FULL) * t;
         }
@@ -581,13 +601,66 @@
         return CONTROL_LOW;
     }
 
-    // helper to pick a random integer in [min,max]
-    function randInt(min, max){
-        return Math.floor(Math.random()*(max-min+1)) + min;
+    // Make n microbes inside the circle swim out and ignore pulses for a while.
+    function forceMicrobesLeave(n, burstMs, ignoreMs){
+        const inside = microbes.filter(e => isInside(e));
+        if(inside.length === 0) return;
+        for(let i=inside.length-1;i>0;i--){
+            const j = Math.floor(Math.random()*(i+1));
+            const tmp = inside[i]; inside[i] = inside[j]; inside[j] = tmp;
+        }
+        const toTake = Math.min(n, inside.length);
+        const now = Date.now();
+        for(let i=0;i<toTake;i++){
+            const e = inside[i];
+            const dx = e.x - zone.x;
+            const dy = e.y - zone.y;
+            const d = Math.hypot(dx,dy);
+            let ox, oy;
+            if(d < 1){ const a = Math.random()*Math.PI*2; ox = Math.cos(a); oy = Math.sin(a); }
+            else { ox = dx/d; oy = dy/d; }
+            ox += Math.random()*0.6 - 0.3;
+            oy += Math.random()*0.6 - 0.3;
+            const norm = Math.hypot(ox, oy) || 1;
+            e.direction.x = ox / norm;
+            e.direction.y = oy / norm;
+            e.motilityState = 'run';
+            e.runTimer = 1.6 + Math.random()*1.2;   // keep running outward instead of re-tumbling at once
+            e.speedBurstUntil = now + burstMs();
+            e.ignorePulsesUntil = now + ignoreMs();
+            e.stickyUntil = 0;
+            e.stickyStrength = 0;
+            e.lastLeftZoneAt = now;
+        }
     }
 
-    function updateMicrobe(e, dt, now){
-        // run / tumble base behavior - but we'll modulate timers with control and sticky
+    function heavyLeave(n){
+        forceMicrobesLeave(
+            n,
+            () => randInt(1100, 1700),
+            () => randInt(BETRAY_IGNORE_MIN_MS, BETRAY_IGNORE_MAX_MS)
+        );
+    }
+
+    // If the player hasn't reached 9 by ~26s, give a temporary help boost
+    function maybeApplyHelpBoost(now){
+        if(highestCount < CEILING && (now - gameStartTime) > GUARANTEE_NINE_TIME_MS && now > helpBoostUntil){
+            helpBoostUntil = now + BOOST_AFTER_TIMEOUT_MS;
+        }
+    }
+
+    // Count just reached 9: schedule the betrayal (first time = longer hold)
+    function handleReachedNine(now){
+        if(!reachedNineOnce){
+            reachedNineOnce = true;
+            pendingBetrayalAt = now + randInt(HOLD_AT_NINE_MIN_MS, HOLD_AT_NINE_MAX_MS);
+        } else {
+            pendingBetrayalAt = now + randInt(LATER_BETRAY_MIN_DELAY_MS, LATER_BETRAY_MAX_DELAY_MS);
+        }
+    }
+
+    function updateMicrobe(e, dt, now, ctrl){
+        // run / tumble
         if(e.motilityState === 'run'){
             e.runTimer -= dt;
             if(e.runTimer <= 0){
@@ -610,6 +683,7 @@
 
         const dn = dayNightFactor();
         const night = (dn < 0.25 || dn > 0.75);
+        const leaving = now < e.ignorePulsesUntil;
         let desired = { x: e.direction.x, y: e.direction.y };
 
         // social cohesion
@@ -631,14 +705,9 @@
             desired.y += comm.y;
         }
 
-        // control value influences everything
-        const nowControl = controlValue(now);
-
-        // gradually re-assign response modes as control decreases (so individuality returns)
-        // we only reassign occasionally to avoid jitter
-        if(now - e.modeAssignedAt > 1200 && Math.random() < 0.12 && nowControl < 0.95){
-            // bias toward ignore/repel as control drops
-            const bias = 1 - nowControl; // 0..1
+        // individuality returns as control drops
+        if(now - e.modeAssignedAt > 1200 && Math.random() < 0.12 && ctrl < 0.95){
+            const bias = 1 - ctrl;
             const r = Math.random();
             if(r < 0.2 + bias * 0.55) e.responseMode = 'ignore';
             else if(r < 0.35 + bias * 0.6) e.responseMode = 'repel';
@@ -647,93 +716,91 @@
             e.modeAssignedAt = now;
         }
 
-        // pulses influence
+        // pulses push microbes AWAY from the click point
         let pulseInfluence = { x: 0, y: 0 };
-        for(const p of pulses){
-            const elapsed = (now - p.started) / 1000;
-            if(elapsed < 0 || elapsed > p.duration) continue;
+        if(!leaving){
+            for(const p of pulses){
+                const elapsed = (now - p.started) / 1000;
+                if(elapsed < 0 || elapsed > p.duration) continue;
 
-            const dx = p.x - e.x;
-            const dy = p.y - e.y;
-            const dist = Math.hypot(dx, dy) || 0.0001;
-            const pulseRadius = elapsed / p.duration * p.maxRadius;
-            if(dist > pulseRadius + 30) continue;
-            if(now < e.ignorePulsesUntil) continue;
+                const dx = p.x - e.x;
+                const dy = p.y - e.y;
+                const dist = Math.hypot(dx, dy) || 0.0001;
+                const pulseRadius = elapsed / p.duration * p.maxRadius;
+                if(dist > pulseRadius + 30) continue;
 
-            // Determine willRespond: baseline per-microbe scaled by control (when control high, almost all respond)
-            // Also add temporary boosts (firstClickBoost / helpBoost)
-            let willRespondProb = RESPONSE_PROB_BASE * nowControl * (0.85 + (1 - e.individuality) * 0.3); // per-microbe individuality reduces chance slightly
-            // mix in microbe base to avoid extreme outliers
-            willRespondProb = Math.min(0.98, willRespondProb * (0.6 + e.responseProbBase*0.7));
+                let willRespondProb = RESPONSE_PROB_BASE * ctrl * (0.85 + (1 - e.individuality) * 0.3);
+                willRespondProb = Math.min(0.98, willRespondProb * (0.6 + e.responseProbBase*0.7));
 
-            if(now < firstClickBoostUntil){
-                // strong nudge on first click for those near pulse center so player sees immediate effect
-                if(dist < p.maxRadius * 0.6) willRespondProb = Math.max(willRespondProb, 0.92);
+                if(now < firstClickBoostUntil && dist < p.maxRadius * 0.7){
+                    willRespondProb = Math.max(willRespondProb, 0.96);
+                }
+                if(now < helpBoostUntil){
+                    willRespondProb = Math.max(willRespondProb, 0.88);
+                }
+
+                // while control is high everyone obeys; afterwards individual modes apply
+                const mode = (ctrl > 0.85) ? 'attract' : e.responseMode;
+                if(mode === 'ignore') continue;
+                if(mode === 'nightOnly' && !night) continue;
+
+                if(Math.random() >= willRespondProb) continue;
+
+                const nx = dx / dist;
+                const ny = dy / dist;
+                const proximity = Math.max(0, 1 - (dist / Math.max(20, pulseRadius + 1)));
+                const phaseFactor = 1 - (elapsed / p.duration);
+                const baseStrength = (0.5 + (1 - e.individuality) * 0.18) * proximity * phaseFactor;
+                const strength = baseStrength * (1 + ctrl * PULSE_STRENGTH_MULT);
+
+                // normal microbes move away; 'repel' individuals do the opposite (disobedient)
+                const sign = (mode === 'repel') ? 1 : -1;
+                pulseInfluence.x += sign * nx * strength;
+                pulseInfluence.y += sign * ny * strength;
+
+                if(strength > 0.03){
+                    e.direction.x = (e.direction.x * 0.36 + sign * nx * 0.64);
+                    e.direction.y = (e.direction.y * 0.36 + sign * ny * 0.64);
+                    const dnrm = Math.hypot(e.direction.x, e.direction.y) || 1;
+                    e.direction.x /= dnrm; e.direction.y /= dnrm;
+                    e.speedBurstUntil = now + 300 + Math.random()*350;
+                }
+
+                e.lastRespondedAt = now;
             }
-            if(now < helpBoostUntil){
-                // temporary global help to push toward 9
-                willRespondProb = Math.max(willRespondProb, 0.85);
-            }
-
-            // If control is high, ignore per-microbe responseMode and make them attract
-            const effectiveMode = (nowControl > 0.7) ? 'attract' : e.responseMode;
-
-            // apply night-only check if not in attract-high-control
-            if(effectiveMode === 'nightOnly' && !night) continue;
-
-            if(Math.random() >= willRespondProb) continue;
-
-            // strength scaled by control and proximity and pulse phase
-            const nx = dx / dist;
-            const ny = dy / dist;
-            const proximity = Math.max(0, 1 - (dist / Math.max(20, pulseRadius + 1)));
-            const phaseFactor = 1 - (elapsed / p.duration);
-            const baseStrength = (0.46 + (1 - e.individuality) * 0.18) * proximity * phaseFactor;
-            const strength = baseStrength * (1 + nowControl * PULSE_STRENGTH_MULT);
-
-            if(effectiveMode === 'repel'){
-                pulseInfluence.x -= nx * strength;
-                pulseInfluence.y -= ny * strength;
-            } else {
-                pulseInfluence.x += nx * strength;
-                pulseInfluence.y += ny * strength;
-            }
-            e.lastRespondedAt = now;
         }
 
         desired.x += pulseInfluence.x * 2.6 + (Math.random() - 0.5) * 0.06;
         desired.y += pulseInfluence.y * 2.6 + (Math.random() - 0.5) * 0.06;
 
-        // zone attraction; sticky behavior scales with control
+        // stickiness: ONLY while inside the circle (and not on the way out)
         const dxz = zone.x - e.x;
         const dyz = zone.y - e.y;
         const distz = Math.hypot(dxz, dyz) || 0.0001;
-        const inside = distz <= zone.radius + e.radius * 0.6;
+        const currentlyInside = isInside(e);
+        let stickyActive = false;
 
-        if(inside){
-            // sticky strength scales with control plus any explicit stickyUntil timestamp
-            const stickyActive = (now < e.stickyUntil) || nowControl > 0.6;
-            if(stickyActive){
-                // scale with control so it weakens as control falls
-                const stickyStrength = STICKY_PULL_BASE * nowControl * (1 + (1 - e.individuality)*0.4);
-                e.stickyStrength = Math.max(e.stickyStrength, stickyStrength);
-                desired.x += (dxz / distz) * e.stickyStrength;
-                desired.y += (dyz / distz) * e.stickyStrength;
-
-                // slow them and reduce tumble frequency while sticky
-                if(e.motilityState === 'run') e.runTimer += dt * (1.2 * (0.5 + nowControl * 0.9));
-                if(Math.random() < 0.02 * (0.6 + nowControl * 0.7)) {
-                    // occasional tiny adjustments rather than tumble
-                }
-            }
-
-            // some natural resistance to leaving if just responded recently while control high
-            if(now - e.lastRespondedAt < 2600 && nowControl > 0.55){
+        if(currentlyInside && !leaving){
+            if(now - e.lastRespondedAt < 2600 && ctrl > 0.55){
                 e.stickyUntil = Math.max(e.stickyUntil, now + 2000 + Math.random()*1800);
             }
+            stickyActive = (now < e.stickyUntil) || ctrl > 0.6;
+            if(stickyActive){
+                e.stickyStrength = STICKY_PULL_BASE * ctrl * (1 + (1 - e.individuality)*0.4);
+                desired.x += (dxz / distz) * e.stickyStrength;
+                desired.y += (dyz / distz) * e.stickyStrength;
+                // fewer tumbles while sticky
+                if(e.motilityState === 'run') e.runTimer += dt * (1.2 * (0.5 + ctrl * 0.9));
+            }
+            // as control fades, tumble more often inside the circle
+            if(ctrl < 0.5 && e.motilityState === 'run'){
+                e.runTimer -= dt * (0.5 - ctrl) * 4;
+            }
+        } else {
+            e.stickyStrength = 0;       // reset: no lingering slowdown outside the circle
         }
 
-        // Speed calculation
+        // speed
         const mag = Math.hypot(desired.x, desired.y) || 1;
         desired.x /= mag;
         desired.y /= mag;
@@ -742,17 +809,14 @@
         e.rhythmPhase += dt * (0.7 + dn * 1.2);
         let baseSpeed = Math.max(0.08, e.baseSpeed * (0.55 + 0.9 * (1 - Math.abs(0.5 - dn) * 2)) + Math.abs(rhythm) * 0.12);
 
-        // modify base speed when sticky
-        if(now < e.stickyUntil || e.stickyStrength > 0.01){
-            // scale by current control to make sticky decay as control drops
-            const stickyScale = Math.max(STICKY_SPEED_MULT, STICKY_SPEED_MULT * controlValue(now));
-            baseSpeed *= stickyScale;
+        if(stickyActive){
+            baseSpeed *= 1 - (1 - STICKY_SPEED_MULT) * ctrl;
         }
         if(now < e.speedBurstUntil){
             baseSpeed *= 1.9 + Math.random()*0.6;
         }
 
-        // last-phase randomness to push microbes out
+        // last phase: microbes drift out on their own
         if((now - gameStartTime) > LAST_PHASE_START){
             if(Math.random() < 0.006 + (Math.hypot(e.x-zone.x, e.y-zone.y) / (zone.radius+e.radius))*0.02){
                 const dx = e.x - zone.x;
@@ -761,215 +825,152 @@
                 desired.x += (dx/d) * (0.28 + Math.random()*0.26);
                 desired.y += (dy/d) * (0.28 + Math.random()*0.26);
             }
-            // also reduce response probability gradually
-            // handled elsewhere via controlValue
         }
 
         const moveScale = e.motilityState === 'run' ? 1 : 0.34;
-        e.x += desired.x * baseSpeed * moveScale;
-        e.y += desired.y * baseSpeed * moveScale;
+        const newX = e.x + desired.x * baseSpeed * moveScale;
+        const newY = e.y + desired.y * baseSpeed * moveScale;
+        const projectedInside = Math.hypot(newX - zone.x, newY - zone.y) <= zone.radius;
 
-        // keep inside canvas
+        // CEILING invariant, enforced BEFORE applying the move
+        if(!currentlyInside && projectedInside){
+            if(liveInsideCount >= CEILING){
+                // the microbe "chooses" not to enter: stays just outside, tumbles away
+                const dx = newX - zone.x;
+                const dy = newY - zone.y;
+                const d = Math.hypot(dx,dy) || 0.0001;
+                e.x = zone.x + (dx / d) * (zone.radius + 6 + e.radius);
+                e.y = zone.y + (dy / d) * (zone.radius + 6 + e.radius);
+                e.direction.x = (dx / d) + (Math.random()*0.8 - 0.4);
+                e.direction.y = (dy / d) + (Math.random()*0.8 - 0.4);
+                const dnrm = Math.hypot(e.direction.x, e.direction.y) || 1;
+                e.direction.x /= dnrm; e.direction.y /= dnrm;
+                e.motilityState = 'run';
+                e.runTimer = 1.2 + Math.random();
+                e.speedBurstUntil = now + randInt(900, 1400);
+                e.ignorePulsesUntil = now + randInt(BETRAY_IGNORE_MIN_MS, BETRAY_IGNORE_MAX_MS);
+                e.enteredAt = 0;
+                return;
+            }
+            e.x = newX;
+            e.y = newY;
+            liveInsideCount++;
+            e.enteredAt = now;
+        } else {
+            e.x = newX;
+            e.y = newY;
+            if(currentlyInside && !projectedInside){
+                if(liveInsideCount > 0) liveInsideCount--;
+                e.enteredAt = 0;
+                e.lastLeftZoneAt = now;
+            }
+            if(projectedInside && !e.enteredAt) e.enteredAt = now;
+        }
+
+        // keep inside the canvas
         if(e.x - e.radius < 0){ e.x = e.radius; e.direction.x *= -1; }
         if(e.x + e.radius > canvas.width){ e.x = canvas.width - e.radius; e.direction.x *= -1; }
         if(e.y - e.radius < 0){ e.y = e.radius; e.direction.y *= -1; }
         if(e.y + e.radius > canvas.height){ e.y = canvas.height - e.radius; e.direction.y *= -1; }
     }
 
-    function countInZone(){
-        let inZone = 0;
-        for(const e of microbes){
-            const dx = e.x - zone.x;
-            const dy = e.y - zone.y;
-            const dist = Math.hypot(dx, dy);
-            if(dist <= zone.radius + e.radius * 0.6){
-                inZone++;
-            }
-        }
-        return inZone;
-    }
-
-    // force a number of microbes to leave with parameters customizing how dramatic & long they ignore pulses
-    function forceMicrobesLeave(n, opts = {}){
-        const inside = microbes.filter(e => Math.hypot(e.x - zone.x, e.y - zone.y) <= zone.radius + e.radius*0.6);
-        if(inside.length === 0) return;
-        const shuffled = inside.slice();
-        for(let i=shuffled.length-1;i>0;i--){
-            const j = Math.floor(Math.random()*(i+1));
-            const tmp = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = tmp;
-        }
-        const toTake = Math.min(n, shuffled.length);
-        const now = Date.now();
-        for(let i=0;i<toTake;i++){
-            const e = shuffled[i];
-            e.motilityState = 'run';
-            // pick an outward-ish direction with some randomness
+    // safety net: if more than CEILING inside at end of frame, push the newest entrants out right now
+    function enforceCeilingSafetyNet(now){
+        const insideList = microbes.filter(m => isInside(m));
+        if(insideList.length <= CEILING) return;
+        insideList.sort((a,b) => (b.enteredAt || 0) - (a.enteredAt || 0));
+        const extra = insideList.length - CEILING;
+        for(let i=0;i<extra;i++){
+            const e = insideList[i];
             const dx = e.x - zone.x;
             const dy = e.y - zone.y;
             const d = Math.hypot(dx,dy) || 0.0001;
+            e.x = zone.x + (dx / d) * (zone.radius + 8 + e.radius);
+            e.y = zone.y + (dy / d) * (zone.radius + 8 + e.radius);
             e.direction.x = (dx/d) + (Math.random()*0.8 - 0.4);
             e.direction.y = (dy/d) + (Math.random()*0.8 - 0.4);
-            // longer speed burst if specified (or default)
-            const burstMs = opts.burstMs || (600 + Math.random()*900);
-            e.speedBurstUntil = now + burstMs;
-            // ignore pulses for a long time so they don't immediately get pulled back
-            const ignoreMs = opts.ignoreMs || (900 + Math.random()*1000);
-            e.ignorePulsesUntil = now + ignoreMs;
-            e.lastLeftZoneAt = now;
-            // visual nudge outward
-            const norm = Math.hypot(e.direction.x, e.direction.y) || 1;
-            e.x += (e.direction.x / norm) * (8 + Math.random()*10);
-            e.y += (e.direction.y / norm) * (8 + Math.random()*10);
+            const dnrm = Math.hypot(e.direction.x, e.direction.y) || 1;
+            e.direction.x /= dnrm; e.direction.y /= dnrm;
+            e.speedBurstUntil = now + randInt(900, 1600);
+            e.ignorePulsesUntil = now + randInt(BETRAY_IGNORE_MIN_MS, BETRAY_IGNORE_MAX_MS);
+            e.enteredAt = 0;
         }
     }
 
-    // special heavy-leave behavior used when 10th enters or betrayals: longer ignore and burst
-    function heavyLeave(n){
-        const opts = {
-            burstMs: randInt(900, 1400),
-            ignoreMs: randInt(BETRAY_IGNORE_MIN_MS, BETRAY_IGNORE_MAX_MS)
-        };
-        forceMicrobesLeave(n, opts);
-    }
-
-    // schedule betrayals when many are inside; but the new design uses explicit behaviours:
-    function scheduleBetrayalIfNeeded(inZone){
+    function createPulseAt(x, y){
         const now = Date.now();
-        // keep old conservative scheduling but it's now less deterministic
-        if(inZone >= 8){
-            if(betrayalScheduledAt === 0 && (now - lastBetrayalTime > 2400)){
-                betrayalScheduledAt = now + 400 + Math.random()*800;
-            }
-        }
-        if(betrayalScheduledAt !== 0 && now >= betrayalScheduledAt){
-            // small betrayal to keep things lively
-            forceMicrobesLeave(1 + Math.floor(Math.random()*2));
-            lastBetrayalTime = now;
-            betrayalScheduledAt = 0;
-        }
+        lastPulseAt = now;
+        pulses.push({
+            x, y,
+            started: now,
+            maxRadius: PULSE_MAX_RADIUS,
+            duration: PULSE_DURATION
+        });
     }
-
-    // If the player hasn't reached 9 by GUARANTEE_NINE_TIME_MS, give them a temporary help boost
-    function maybeApplyHelpBoost(now){
-        if(highestCount < 9 && (now - gameStartTime) > GUARANTEE_NINE_TIME_MS && now > helpBoostUntil){
-            helpBoostUntil = now + BOOST_AFTER_TIMEOUT_MS;
-        }
-    }
-
-    // If a 10th microbe enters, make a believable "they chose to leave" reaction
-    function handleTenInsideNow(){
-        const now = Date.now();
-        // pick 1-2 microbes to do a quick run-and-tumble leave after a short delay
-        const delay = randInt(TEN_RESPONSE_DELAY_MIN, TEN_RESPONSE_DELAY_MAX);
-        setTimeout(() => {
-            heavyLeave(1 + Math.floor(Math.random()*2));
-        }, delay);
-    }
-
-    // handle hold at nine: when count reaches 9 for the first time hold for 1-2s to let player believe they will win
-    function handleReachedNine(now){
-        if(!reachedNineAt){
-            reachedNineAt = now;
-            reachedNineOnce = true;
-            // set a small hold (we won't forcibly remove microbes during this hold)
-            reachedNineHoldUntil = now + randInt(HOLD_AT_NINE_MIN_MS, HOLD_AT_NINE_MAX_MS);
-        } else {
-            // later times: schedule a betrayal of 2-3 microbes within 0.5-1.5s
-            const delay = randInt(LATER_BETRAY_MIN_DELAY_MS, LATER_BETRAY_MAX_DELAY_MS);
-            setTimeout(() => {
-                heavyLeave(2 + Math.floor(Math.random()*2));
-            }, delay);
-        }
-    }
-
-    // keep a simple variable for the short hold after reaching 9
-    let reachedNineHoldUntil = 0;
-    let lastInZone = 0;
 
     function update(dt){
         if(!running || ended) return;
 
         const now = Date.now();
+        const ctrl = controlValue(now);
 
-        // clean pulses
+        // click-and-hold: new pulse every PULSE_INTERVAL_MS (timestamp based, no timers)
+        if(pointerDown && now - lastPulseAt >= PULSE_INTERVAL_MS){
+            createPulseAt(cursor.x, cursor.y);
+        }
+
         for(let i = pulses.length - 1; i >= 0; i--){
             if(now - pulses[i].started > pulses[i].duration * 1000){
                 pulses.splice(i, 1);
             }
         }
 
-        // ensure help boost if needed
         maybeApplyHelpBoost(now);
 
-        // update microbes
+        // process microbes one at a time with a live inside count
+        liveInsideCount = countInZone();
         for(const e of microbes){
-            updateMicrobe(e, dt, now);
+            updateMicrobe(e, dt, now, ctrl);
         }
 
-        let inZone = countInZone();
+        enforceCeilingSafetyNet(now);
+
+        let inZone = Math.min(countInZone(), CEILING);
         if(inZone > highestCount) highestCount = inZone;
 
-        // check transitions for reaching 9
-        if(inZone === (GOAL - 1) && lastInZone !== (GOAL - 1)){
-            // just reached 9
+        // reaching 9 schedules a betrayal; it is cancelled if the count drops below 9 first
+        if(inZone === CEILING && lastInZone !== CEILING){
             handleReachedNine(now);
         }
-
-        // when a 10th enters: we must never allow it to stay long
-        if(inZone >= GOAL){
-            // if this just happened, trigger the believable leave sequence
-            if(lastInZone < GOAL){
-                handleTenInsideNow();
-            }
-            // ensure it never stays >= GOAL for more than 500ms
-            setTimeout(() => {
-                // re-check and force a small leave if still at/above goal
-                const current = countInZone();
-                if(current >= GOAL){
-                    // push out enough so it's at most GOAL - 1
-                    const extra = current - (GOAL - 1);
-                    heavyLeave(Math.max(1, extra));
-                }
-            }, 450); // within 0.3-0.6s as spec'd (we pick 450ms)
+        if(inZone < CEILING){
+            pendingBetrayalAt = 0;
+        } else if(pendingBetrayalAt && now >= pendingBetrayalAt){
+            heavyLeave(randInt(2, 3));
+            pendingBetrayalAt = 0;
         }
 
-        // Schedule normal betrayals occasionally (keeps dynamism)
-        scheduleBetrayalIfNeeded(inZone);
-
-        // If the player hasn't reached 9 by about 26s, give a temporary boost until they do
-        if((now - gameStartTime) > GUARANTEE_NINE_TIME_MS && highestCount < 9){
-            // extend help window to encourage reaching 9
-            helpBoostUntil = Math.max(helpBoostUntil, now + BOOST_AFTER_TIMEOUT_MS);
-        }
-
-        // Make sure there is never 10 inside for long (catch-all)
-        inZone = countInZone();
-        if(inZone >= GOAL){
-            const extra = inZone - (GOAL - 1);
-            heavyLeave(Math.max(1, extra));
-        }
-
-        // update HUD
+        // HUD (never shows more than CEILING)
         HUD.counterEl.textContent = `${inZone} / ${GOAL}`;
-
-        // timer
         const timeLeft = Math.max(0, GAME_DURATION - (now - gameStartTime));
-        HUD.timerEl.textContent = Math.ceil(timeLeft / 1000).toString();
-
-        // end condition
-        if((Date.now() - gameStartTime) >= GAME_DURATION){
-            endGame();
+        if(DEBUG){
+            HUD.counterEl.textContent += ` (live:${liveInsideCount})`;
+            HUD.timerEl.textContent = `${Math.ceil(timeLeft/1000)} ctrl:${ctrl.toFixed(2)}`;
+        } else {
+            HUD.timerEl.textContent = Math.ceil(timeLeft / 1000).toString();
         }
 
         lastInZone = inZone;
+
+        if(timeLeft <= 0){
+            endGame();
+        }
     }
 
     function draw(){
         const now = Date.now();
         drawBackground();
         drawPulses();
-        const inZone = countInZone();
-        drawZone(inZone);
+        drawZone(Math.min(countInZone(), CEILING));
         const sorted = microbes.slice().sort((a,b)=> a.y - b.y);
         for(const e of sorted){
             drawMicrobe(ctx, e, now);
@@ -989,114 +990,86 @@
 
         if(running && !ended){
             startHint.classList.remove('hidden');
-            startHint.style.display = 'block';
         } else {
             startHint.classList.add('hidden');
-            startHint.style.display = 'none';
         }
     }
 
-    function createPulseAt(x, y){
-        pulses.push({
-            x: x,
-            y: y,
-            started: Date.now(),
-            duration: PULSE_DURATION,
-            maxRadius: PULSE_MAX_RADIUS
-        });
-        // first-click boost
-        if(!firstClickBoostUntil || Date.now() > firstClickBoostUntil){
-            // first click: ensure a short boost window so first pulse strongly affects neighbors
-            firstClickBoostUntil = Date.now() + FIRST_CLICK_BOOST_MS;
-        }
-    }
+    // pointer handling
+    canvas.addEventListener('pointerdown', (ev) => {
+        pointerDown = true;
+        cursor.x = ev.clientX;
+        cursor.y = ev.clientY;
+        if(!running || ended) return;
+        createPulseAt(cursor.x, cursor.y);
+        firstClickBoostUntil = Date.now() + FIRST_CLICK_BOOST_MS;
+    });
+    window.addEventListener('pointermove', (ev) => {
+        cursor.x = ev.clientX;
+        cursor.y = ev.clientY;
+    });
+    window.addEventListener('pointerup', () => { pointerDown = false; });
+    window.addEventListener('pointercancel', () => { pointerDown = false; });
 
+    // UI
+    const startBtn = document.getElementById('startBtn');
+    const tryAgainBtn = document.getElementById('tryAgainBtn');
+    const startScreen = document.getElementById('startScreen');
+    const summaryScreen = document.getElementById('summaryScreen');
+    const closestLine = document.getElementById('closestLine');
+
+    // full reset + start a new round immediately (used by Start and Try again)
     function startGame(){
-        running = true;
-        ended = false;
-        gameStartTime = Date.now();
-        lastTime = Date.now();
         pulses.length = 0;
         highestCount = 0;
-        betrayalScheduledAt = 0;
-        lastBetrayalTime = 0;
-        reachedNineAt = 0;
         reachedNineOnce = false;
+        pendingBetrayalAt = 0;
         firstClickBoostUntil = 0;
         helpBoostUntil = 0;
-        reachedNineHoldUntil = 0;
+        lastInZone = 0;
+        liveInsideCount = 0;
+        pointerDown = false;
+        lastPulseAt = 0;
 
-        createPopulation(40);
+        createPopulation(48);
+        for(const m of microbes){ m.enteredAt = 0; m.ignorePulsesUntil = 0; m.speedBurstUntil = 0; m.stickyUntil = 0; m.stickyStrength = 0; }
 
-        document.getElementById('startScreen').classList.add('hidden');
-        document.getElementById('summaryScreen').classList.add('hidden');
-        startHint.classList.remove('hidden');
+        HUD.counterEl.textContent = `0 / ${GOAL}`;
+        HUD.timerEl.textContent = `${Math.ceil(GAME_DURATION/1000)}`;
+
+        ended = false;
+        running = true;
+        gameStartTime = Date.now();
+        lastTime = gameStartTime;
+
+        startScreen.classList.add('hidden');
+        summaryScreen.classList.add('hidden');
     }
 
     function endGame(){
         if(ended) return;
         ended = true;
         running = false;
-        document.getElementById('summaryScreen').classList.remove('hidden');
-        startHint.classList.add('hidden');
-        document.getElementById('closestLine').textContent = `Closest: ${highestCount} of ${GOAL}`;
+        pointerDown = false;
+        closestLine.textContent = `Closest: ${Math.min(highestCount, CEILING)} of ${GOAL}`;
+        summaryScreen.classList.remove('hidden');
     }
 
-    window.addEventListener('mousemove', (event) => {
-        cursor.x = event.clientX;
-        cursor.y = event.clientY;
-    });
+    startBtn.addEventListener('click', startGame);
+    tryAgainBtn.addEventListener('click', startGame);
 
-    window.addEventListener('pointerdown', (ev) => {
-        if(!running) return;
-        pointerDown = true;
-        // immediate pulse
-        createPulseAt(cursor.x, cursor.y);
-        // start repeating pulses while held
-        if(pointerPulseInterval) clearInterval(pointerPulseInterval);
-        pointerPulseInterval = setInterval(() => {
-            if(pointerDown){
-                createPulseAt(cursor.x, cursor.y);
-            }
-        }, PULSE_INTERVAL_MS);
-    });
-    window.addEventListener('pointerup', (ev) => {
-        pointerDown = false;
-        if(pointerPulseInterval){
-            clearInterval(pointerPulseInterval);
-            pointerPulseInterval = null;
-        }
-    });
-
-    window.addEventListener('pointermove', (event) => {
-        cursor.x = event.clientX;
-        cursor.y = event.clientY;
-    });
-
-    document.getElementById('startBtn').addEventListener('click', startGame);
-    document.getElementById('tryAgainBtn').addEventListener('click', () => {
-        document.getElementById('startScreen').classList.add('hidden');
-        document.getElementById('summaryScreen').classList.add('hidden');
-        startGame();
-    });
-
+    // one single loop for the whole page: always draws, only updates while running
     function loop(){
         const now = Date.now();
-        const dt = (now - lastTime) / 1000;
+        const dt = Math.min(0.05, (now - lastTime) / 1000);
         lastTime = now;
-
-        update(dt);
+        if(running && !ended) update(dt);
         draw();
         requestAnimationFrame(loop);
     }
 
-    window.addEventListener('resize', () => {
-        resize();
-        ensureZonePosition();
-    });
-
-    ensureZonePosition();
-    createPopulation(40);
+    // seed a population so the visuals show behind the start screen
+    createPopulation(48);
     requestAnimationFrame(loop);
     </script>
 </body>
