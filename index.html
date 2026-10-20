@@ -82,7 +82,7 @@
     <div id="startScreen">
         <div class="card">
             <h1>Micrar.io</h1>
-            <p>Get 10 microbes inside the circle. You have 30 seconds. Click to push them, and do it FAST!</p>
+            <p>Get 10 microbes inside the circle. You have 30 seconds. Click to push them.</p>
             <div class="actions">
                 <button id="startBtn">Start</button>
                 <button id="howToPlayBtn" class="secondary" type="button">How to play</button>
@@ -96,7 +96,7 @@
             <p id="closestLine">Closest: 0 of 10</p>
             <div class="actions">
                 <button id="tryAgainBtn">Try again</button>
-                <button id="infoBtn" class="secondary" type="button">Info</button>
+                <button id="infoBtn" class="secondary" type="button">Provotype info</button>
             </div>
         </div>
     </div>
@@ -104,7 +104,7 @@
     <div id="startModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="startModalTitle">
         <div class="modal-panel">
             <h2 id="startModalTitle">How to play</h2>
-            <p>Goal: get microbes into the glowing circle. Click or hold anywhere to send out a pulse; microbes tend to move AWAY from it, so place pulses behind them to herd them toward the circle. Not every microbe will listen, and they change over time (day/night rhythm, groups, moods; some just stop). The counter shows how many are inside; the timer shows seconds left.</p>
+            <p>Goal: get microbes into the glowing circle. Click or hold anywhere to send out a pulse; microbes tend to move AWAY from it, so place pulses behind them to guide them toward the circle. Not every microbe will listen, and they change over time... The counter shows how many are inside; the timer shows seconds left.</p>
             <div class="actions"><button id="startModalClose" class="secondary close-btn" type="button">Close</button></div>
         </div>
     </div>
@@ -112,9 +112,9 @@
     <div id="infoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="infoModalTitle">
         <div class="modal-panel">
             <h2 id="infoModalTitle">Why this provotype</h2>
-            <p><strong>Why a provotype:</strong> a provocative prototype, not a game to win. The 10th microbe never arrives, on purpose. It lets you feel what it is like to try to command living things that do not obey.</p>
-            <p><strong>Research link:</strong> In Kim et al. (2026), a biodesigner spent about three years trying to make cyanobacteria move on command and learned most from the failures: letting go of control and unlearning human-centred expectations, a shift “from machinery to sensibility.” The game asks you to feel that shift: you are not becoming a microbe, you are trying to work with one. The microbes here are generic, not cyanobacteria.</p>
-            <p><strong>Microbial qualities:</strong> Rhythms: cooperation fades over the round, following a day/night-like cycle. Communication: microbes only act together once enough neighbours are near (quorum sensing). Biophysics: smaller microbes jitter and move faster (Brownian motion, size effects). Translucency: microbes are see-through instead of solid bright blobs. Motility: each microbe moves in its own run-and-tumble way. Refusal: some microbes simply stop and ignore you.</p>
+            <p>This is a provoking prototype, not just a game to win. You can actually never get the 10th microbe inside the circle. It lets you feel what it is like to try to command living things that do not obey.</p><br>
+            <p>It links to the research of Kim et al. (2026), in which a biodesigner spent about three years trying to make cyanobacteria move on command and learned most from the failures: letting go of control and unlearning human-centred expectations, a shift “from machinery to sensibility.” The game makes you feel that shift.</p><br>
+            <p>The microbes in the game move accroding to the 6 microbial qualities mentioned in Kim et al. (2024). For example, microbial cooperation fades over the round, following a day/night-like cycle (rhythm quality). Also, microbes only act together once enough neighbours are near (quorum sensing), and smaller microbes move faster (size effects). Furthermore, some microbes are see-through instead of solid bright blobs (translucency), and each microbe moves in its own run-and-tumble way (motility). Lastly, some microbes simply stop and ignore you (refusal).</p>
             <div class="small">
                 <p><strong>References</strong></p>
                 <ul class="reference-list">
@@ -415,7 +415,7 @@
         if(ended) return;
         ended = true;
         running = false;
-        const closest = Math.min(Math.max(countInZone(),0), CEILING);
+        const closest = Math.min(highestCount, CEILING);
         document.getElementById('closestLine').textContent = `Closest: ${closest} of 10`;
         summaryScreen.classList.remove('hidden');
         startHint.classList.add('hidden');
@@ -1202,7 +1202,7 @@
 
     function loop(){
         const now = Date.now();
-        const dt = (now - lastTime) / 1000;
+        const dt = Math.min(0.05, (now - lastTime) / 1000);
         if(running && !ended){
             update(dt);
         }
